@@ -1,0 +1,429 @@
+{
+  "authorization": [
+    {
+      "allowed": true,
+      "caveats": "channel=engineering&kind=9",
+      "now": 1000,
+      "request": {
+        "channel": "engineering",
+        "kind": 9
+      },
+      "uses_consumed": 0
+    },
+    {
+      "allowed": false,
+      "caveats": "channel=general&kind=9",
+      "now": 1000,
+      "reason": "out_of_scope",
+      "request": {
+        "channel": "engineering",
+        "kind": 9
+      },
+      "uses_consumed": 0
+    },
+    {
+      "allowed": false,
+      "caveats": "tool=shell",
+      "now": 1000,
+      "reason": "unstated_dimension",
+      "request": {
+        "kind": 9
+      },
+      "uses_consumed": 0
+    },
+    {
+      "allowed": false,
+      "caveats": "expires=2000&not_before=1000",
+      "now": 999,
+      "reason": "not_yet_valid",
+      "request": {},
+      "uses_consumed": 0
+    },
+    {
+      "allowed": true,
+      "caveats": "expires=2000&not_before=1000",
+      "now": 1000,
+      "request": {},
+      "uses_consumed": 0,
+      "why": "not_before is inclusive"
+    },
+    {
+      "allowed": true,
+      "caveats": "expires=2000&not_before=1000",
+      "now": 1999,
+      "request": {},
+      "uses_consumed": 0
+    },
+    {
+      "allowed": false,
+      "caveats": "expires=2000&not_before=1000",
+      "now": 2000,
+      "reason": "expired",
+      "request": {},
+      "uses_consumed": 0,
+      "why": "expires is exclusive"
+    },
+    {
+      "allowed": true,
+      "caveats": "uses=3",
+      "now": 1000,
+      "request": {},
+      "uses_consumed": 2
+    },
+    {
+      "allowed": false,
+      "caveats": "uses=3",
+      "now": 1000,
+      "reason": "budget_exhausted",
+      "request": {},
+      "uses_consumed": 3
+    },
+    {
+      "allowed": true,
+      "caveats": "",
+      "now": 0,
+      "request": {},
+      "uses_consumed": 0,
+      "why": "the unconstrained set permits everything"
+    }
+  ],
+  "canonical_caveats": [
+    "",
+    "kind=9",
+    "kind=9,40002",
+    "channel=engineering&kind=9",
+    "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002&not_before=1700000000&tool=shell,str_replace&uses=5",
+    "peer=0000000000000000000000000000000000000000000000000000000000000aaa",
+    "depth=0",
+    "uses=1"
+  ],
+  "chains": [
+    {
+      "description": "Owner grants the planner two channels and two kinds.",
+      "effective_caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "hops": 1,
+      "link_ids": [
+        "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500"
+      ],
+      "name": "one_hop",
+      "preimages": [
+        "nostr:mandate:v1\nroot\n79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\nchannel=engineering,general&depth=2&expires=1800000000&kind=9,40002"
+      ],
+      "root_authority": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+    },
+    {
+      "description": "Planner narrows to one channel, one kind, a budget, and one remaining hop.",
+      "effective_caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "4af78e878814ac1bd4d4d02c8ad1910234056f52434ada1b4fa5fe070ca1a7d3384d600735f9e269b50061164fb578f9c502c8d31e23888365d09fe6a85871eb",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "hops": 2,
+      "link_ids": [
+        "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+        "e6ccb95e845533465f11406000249be5cf56f8eabbd5cf58baaf5ef746983cf7"
+      ],
+      "name": "two_hop",
+      "preimages": [
+        "nostr:mandate:v1\nroot\n79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\nchannel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+        "nostr:mandate:v1\nf77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\nf9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\nchannel=engineering&depth=1&expires=1799990000&kind=9&uses=5"
+      ],
+      "root_authority": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+    },
+    {
+      "description": "Worker narrows again, adding a tool scope and exhausting depth.",
+      "effective_caveats": "channel=engineering&depth=0&expires=1799980000&kind=9&tool=shell&uses=2",
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "4af78e878814ac1bd4d4d02c8ad1910234056f52434ada1b4fa5fe070ca1a7d3384d600735f9e269b50061164fb578f9c502c8d31e23888365d09fe6a85871eb",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          },
+          {
+            "caveats": "channel=engineering&depth=0&expires=1799980000&kind=9&tool=shell&uses=2",
+            "issuer": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            "parent": "e6ccb95e845533465f11406000249be5cf56f8eabbd5cf58baaf5ef746983cf7",
+            "sig": "24bf5e9cace1930ed7da83287b7cf93ab14c9e2ef5b5312bf8a51118101247dc4175b15a4ef5114da6c83dfbebff388d4c36a27a1167f9674cc74843f164b520",
+            "subject": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13"
+          }
+        ],
+        "v": 1
+      },
+      "hops": 3,
+      "link_ids": [
+        "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+        "e6ccb95e845533465f11406000249be5cf56f8eabbd5cf58baaf5ef746983cf7",
+        "384f6403bbc66f85e1a71ad7eed3027d6224692196439c718d2ac6cc178f82e1"
+      ],
+      "name": "three_hop",
+      "preimages": [
+        "nostr:mandate:v1\nroot\n79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\nchannel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+        "nostr:mandate:v1\nf77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\nf9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\nchannel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+        "nostr:mandate:v1\ne6ccb95e845533465f11406000249be5cf56f8eabbd5cf58baaf5ef746983cf7\nf9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\ne493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13\nchannel=engineering&depth=0&expires=1799980000&kind=9&tool=shell&uses=2"
+      ],
+      "root_authority": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "subject": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13"
+    },
+    {
+      "description": "A root grant with no caveats at all.",
+      "effective_caveats": "",
+      "envelope": {
+        "links": [
+          {
+            "caveats": "",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "d3ce4cda5f5ad7fc1a6c3a0bc886973792e542197c666a02da99b5bbd9d6a84f9562dd309b020e1a71d360e3b8f3fd8c3883b4173cd5cb0e30e535d986bd4a8e",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "hops": 1,
+      "link_ids": [
+        "148bf20a1d0cd98e7e81538046760dc6bea98b09dec9af3bf09c29743f80551a"
+      ],
+      "name": "unconstrained_root",
+      "preimages": [
+        "nostr:mandate:v1\nroot\n79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\nc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\n"
+      ],
+      "root_authority": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+    }
+  ],
+  "invalid_caveats": [
+    {
+      "input": "kind=9&channel=general",
+      "reason": "dimensions out of canonical order"
+    },
+    {
+      "input": "kind=9&kind=10",
+      "reason": "duplicate dimension"
+    },
+    {
+      "input": "kind=40002,9",
+      "reason": "set members out of numeric order"
+    },
+    {
+      "input": "kind=9,9",
+      "reason": "duplicate set member"
+    },
+    {
+      "input": "channel=general,engineering",
+      "reason": "set members out of bytewise order"
+    },
+    {
+      "input": "&kind=9",
+      "reason": "leading delimiter"
+    },
+    {
+      "input": "kind=9&",
+      "reason": "trailing delimiter"
+    },
+    {
+      "input": "kind=9&&tool=shell",
+      "reason": "doubled delimiter"
+    },
+    {
+      "input": "kind",
+      "reason": "clause missing '='"
+    },
+    {
+      "input": "realm=block",
+      "reason": "unknown dimension"
+    },
+    {
+      "input": "kind=09",
+      "reason": "leading zero"
+    },
+    {
+      "input": "expires=01700000000",
+      "reason": "leading zero"
+    },
+    {
+      "input": "kind=65536",
+      "reason": "kind out of range"
+    },
+    {
+      "input": "depth=256",
+      "reason": "depth out of range"
+    },
+    {
+      "input": "uses=0",
+      "reason": "a zero budget grants nothing"
+    },
+    {
+      "input": "kind=",
+      "reason": "empty member set"
+    },
+    {
+      "input": "kind=9 ",
+      "reason": "whitespace"
+    },
+    {
+      "input": "tool=café",
+      "reason": "non-ascii"
+    },
+    {
+      "input": "tool=sh=ell",
+      "reason": "'=' inside a member"
+    },
+    {
+      "input": "peer=deadbeef",
+      "reason": "peer is not a 64-hex pubkey"
+    },
+    {
+      "input": "peer=0000000000000000000000000000000000000000000000000000000000000AAA",
+      "reason": "uppercase hex"
+    },
+    {
+      "input": "expires=100&not_before=100",
+      "reason": "empty time window"
+    },
+    {
+      "input": "expires=100&not_before=200",
+      "reason": "empty time window"
+    }
+  ],
+  "keys": {
+    "helper": {
+      "pubkey": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
+      "secret": "0000000000000000000000000000000000000000000000000000000000000004"
+    },
+    "owner": {
+      "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "secret": "0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "planner": {
+      "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "secret": "0000000000000000000000000000000000000000000000000000000000000002"
+    },
+    "worker": {
+      "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "secret": "0000000000000000000000000000000000000000000000000000000000000003"
+    }
+  },
+  "narrowing": [
+    {
+      "child": "kind=9",
+      "narrows": true,
+      "parent": "kind=9,40002"
+    },
+    {
+      "child": "kind=9,40002",
+      "narrows": true,
+      "parent": "kind=9,40002"
+    },
+    {
+      "child": "kind=9,40002",
+      "narrows": false,
+      "parent": "kind=9",
+      "why": "superset widens"
+    },
+    {
+      "child": "",
+      "narrows": false,
+      "parent": "channel=engineering",
+      "why": "dropping a constraint is not inheritance"
+    },
+    {
+      "child": "channel=engineering&kind=9",
+      "narrows": true,
+      "parent": "kind=9",
+      "why": "adding a dimension narrows"
+    },
+    {
+      "child": "channel=engineering&kind=9&uses=1",
+      "narrows": true,
+      "parent": "",
+      "why": "an unconstrained parent admits anything"
+    },
+    {
+      "child": "expires=1500&not_before=1200",
+      "narrows": true,
+      "parent": "expires=2000&not_before=1000"
+    },
+    {
+      "child": "expires=2001&not_before=1000",
+      "narrows": false,
+      "parent": "expires=2000&not_before=1000",
+      "why": "later expiry widens"
+    },
+    {
+      "child": "expires=2000&not_before=999",
+      "narrows": false,
+      "parent": "expires=2000&not_before=1000",
+      "why": "earlier start widens"
+    },
+    {
+      "child": "uses=1",
+      "narrows": true,
+      "parent": "uses=5"
+    },
+    {
+      "child": "uses=6",
+      "narrows": false,
+      "parent": "uses=5",
+      "why": "budgets only shrink"
+    },
+    {
+      "child": "depth=1",
+      "narrows": true,
+      "parent": "depth=2"
+    },
+    {
+      "child": "depth=2",
+      "narrows": false,
+      "parent": "depth=2",
+      "why": "depth must strictly decrease"
+    },
+    {
+      "child": "depth=0",
+      "narrows": false,
+      "parent": "depth=0",
+      "why": "a parent at zero may not delegate"
+    }
+  ],
+  "note": "Generated by `cargo run -p buzz-mandate --example mandate-vectors`. Test keys only.",
+  "protocol": "NIP-CM",
+  "version": 1
+}

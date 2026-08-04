@@ -1,0 +1,18 @@
+[package]
+name = "buzz-mandate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "NIP-CM capability mandates — monotone-attenuating delegation chains for agent authority"
+
+[dependencies]
+buzz-core  = { path = "../buzz-core" }
+nostr      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+
+# NO tokio, NO network, NO clock: verification is a pure function of
+# (chain, context), which is what keeps the subject out of the trust decision.

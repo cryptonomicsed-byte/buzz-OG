@@ -588,6 +588,22 @@ pub const KIND_HUDDLE_GUIDELINES: u32 = 48106;
 /// Internal kind for media upload audit entries. Not a relay event kind.
 pub const KIND_MEDIA_UPLOAD: u32 = 49001;
 
+// Capability mandates (50000–50999)
+/// NIP-CM: Capability mandate grant — a signed delegation chain proving that a
+/// root authority granted an agent key a bounded capability, and that every
+/// intermediate key narrowed it rather than widened it.
+///
+/// Content is the JSON envelope `{"v":1,"links":[…]}` produced by
+/// `buzz_mandate::MandateChain::to_json`. Other events present a mandate with a
+/// single `["mandate", "<this-event-id>"]` tag. Complements NIP-OA, which
+/// covers the single-hop owner→agent case; see `docs/nips/NIP-CM.md`.
+pub const KIND_MANDATE_GRANT: u32 = 50001;
+
+/// NIP-CM: Capability mandate revocation — names one link id, which invalidates
+/// every chain passing through that link. Honoured only from the link's issuer
+/// or the chain's root authority.
+pub const KIND_MANDATE_REVOKE: u32 = 50002;
+
 /// NIP-34: Repository announcement (parameterized replaceable, d-tag = repo-id).
 pub const KIND_GIT_REPO_ANNOUNCEMENT: u32 = 30617;
 /// NIP-34: Repository state — current branch/tag refs (parameterized replaceable, d-tag = repo-id).
@@ -738,6 +754,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_HUDDLE_ENDED,
     KIND_HUDDLE_GUIDELINES,
     KIND_MEDIA_UPLOAD,
+    KIND_MANDATE_GRANT,
+    KIND_MANDATE_REVOKE,
     KIND_GIT_REPO_ANNOUNCEMENT,
     KIND_GIT_REPO_STATE,
     KIND_GIT_PATCH,

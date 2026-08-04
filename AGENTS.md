@@ -50,6 +50,7 @@ crates/
   buzz-agent          # Minimal ACP-compliant agent (non-streaming, tool-calls-as-output)
   buzz-dev-mcp        # Developer MCP server — shell + file-edit tools
   buzz-persona        # Agent persona packs
+  buzz-mandate        # NIP-CM capability mandates — attenuating delegation chains
   buzz-workflow       # YAML-as-code workflow engine (evalexpr conditions)
   # Clients + interop
   buzz-pair-relay     # Ephemeral sidecar relay for NIP-AB device pairing
