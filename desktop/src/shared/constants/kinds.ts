@@ -70,6 +70,12 @@ export const KIND_GIT_STATUS_DRAFT = 1633;
 // h-tags = currently-hidden DM channel ids).
 export const KIND_DM_VISIBILITY = 30622;
 
+// NIP-CM: capability mandates. 50001 carries a signed delegation chain;
+// 50002 revokes one link id, and with it every chain through that link.
+// Caveat parsing and scope rendering live in shared/mandate/caveats.ts.
+export const KIND_MANDATE_GRANT = 50001;
+export const KIND_MANDATE_REVOKE = 50002;
+
 // Human-visible "new content" message kinds. Used as the unread trigger set
 // (sidebar badges, catch-up queries) and as the Home-feed mention query.
 // Reactions, edits, diffs, deletions, and system messages are deliberately
