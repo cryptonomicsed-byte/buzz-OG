@@ -290,9 +290,9 @@ fn depth_must_strictly_decrease() {
 fn request() -> Request<'static> {
     Request {
         kind: Some(9),
-        channel: Some("engineering"),
-        peer: None,
-        tool: None,
+        channels: &["engineering"],
+        peers: &[],
+        tools: &[],
     }
 }
 
@@ -300,7 +300,7 @@ fn request() -> Request<'static> {
 fn an_in_scope_request_is_authorized() {
     let caveats = parse("channel=engineering&kind=9");
     assert!(caveats
-        .authorizes(&request(), &VerifyContext::at(1000))
+        .authorizes(&request(), &VerifyContext::at_untracked(1000))
         .is_ok());
 }
 
@@ -308,7 +308,7 @@ fn an_in_scope_request_is_authorized() {
 fn an_out_of_scope_value_is_denied() {
     let caveats = parse("channel=general&kind=9");
     assert_eq!(
-        caveats.authorizes(&request(), &VerifyContext::at(1000)),
+        caveats.authorizes(&request(), &VerifyContext::at_untracked(1000)),
         Err(DenyReason::OutOfScope {
             dimension: "channel",
             value: "engineering".to_owned(),
@@ -322,7 +322,7 @@ fn an_unstated_dimension_fails_closed() {
     // Silence must not read as "no tool involved, therefore fine".
     let caveats = parse("tool=shell");
     assert_eq!(
-        caveats.authorizes(&request(), &VerifyContext::at(1000)),
+        caveats.authorizes(&request(), &VerifyContext::at_untracked(1000)),
         Err(DenyReason::UnstatedDimension { dimension: "tool" })
     );
 }
@@ -332,20 +332,20 @@ fn time_bounds_are_inclusive_below_and_exclusive_above() {
     let caveats = parse("expires=2000&not_before=1000");
 
     assert_eq!(
-        caveats.authorizes(&request(), &VerifyContext::at(999)),
+        caveats.authorizes(&request(), &VerifyContext::at_untracked(999)),
         Err(DenyReason::NotYetValid {
             now: 999,
             not_before: 1000
         })
     );
     assert!(caveats
-        .authorizes(&request(), &VerifyContext::at(1000))
+        .authorizes(&request(), &VerifyContext::at_untracked(1000))
         .is_ok());
     assert!(caveats
-        .authorizes(&request(), &VerifyContext::at(1999))
+        .authorizes(&request(), &VerifyContext::at_untracked(1999))
         .is_ok());
     assert_eq!(
-        caveats.authorizes(&request(), &VerifyContext::at(2000)),
+        caveats.authorizes(&request(), &VerifyContext::at_untracked(2000)),
         Err(DenyReason::Expired {
             now: 2000,
             expires: 2000
@@ -356,10 +356,7 @@ fn time_bounds_are_inclusive_below_and_exclusive_above() {
 #[test]
 fn a_spent_budget_denies() {
     let caveats = parse("uses=3");
-    let spent = VerifyContext {
-        now: 1000,
-        uses_consumed: 3,
-    };
+    let spent = VerifyContext::new(1000, 3);
     assert_eq!(
         caveats.authorizes(&request(), &spent),
         Err(DenyReason::BudgetExhausted {
@@ -368,10 +365,7 @@ fn a_spent_budget_denies() {
         })
     );
 
-    let partly_spent = VerifyContext {
-        now: 1000,
-        uses_consumed: 2,
-    };
+    let partly_spent = VerifyContext::new(1000, 2);
     assert!(caveats.authorizes(&request(), &partly_spent).is_ok());
 }
 
@@ -379,6 +373,69 @@ fn a_spent_budget_denies() {
 fn the_unconstrained_set_authorizes_everything() {
     let caveats = parse("");
     assert!(caveats
-        .authorizes(&Request::default(), &VerifyContext::at(0))
+        .authorizes(&Request::default(), &VerifyContext::at_untracked(0))
         .is_ok());
+}
+
+#[test]
+fn every_stated_value_must_be_in_scope() {
+    // A Nostr event carries as many `h` tags as its author chose. Checking the
+    // first and stopping would authorize an event that also targets a channel
+    // the mandate never mentioned.
+    let caveats = parse("channel=engineering");
+
+    let one_ok = Request {
+        channels: &["engineering"],
+        ..Request::default()
+    };
+    assert!(caveats
+        .authorizes(&one_ok, &VerifyContext::at_untracked(1000))
+        .is_ok());
+
+    let smuggled = Request {
+        channels: &["engineering", "secrets"],
+        ..Request::default()
+    };
+    assert_eq!(
+        caveats.authorizes(&smuggled, &VerifyContext::at_untracked(1000)),
+        Err(DenyReason::OutOfScope {
+            dimension: "channel",
+            value: "secrets".to_owned(),
+        })
+    );
+
+    // Order must not matter: the out-of-scope value comes first here.
+    let smuggled_first = Request {
+        channels: &["secrets", "engineering"],
+        ..Request::default()
+    };
+    assert!(caveats
+        .authorizes(&smuggled_first, &VerifyContext::at_untracked(1000))
+        .is_err());
+}
+
+#[test]
+fn stating_nothing_on_a_constrained_dimension_is_denied() {
+    let caveats = parse("peer=0000000000000000000000000000000000000000000000000000000000000aaa");
+    assert_eq!(
+        caveats.authorizes(&Request::default(), &VerifyContext::at_untracked(1000)),
+        Err(DenyReason::UnstatedDimension { dimension: "peer" })
+    );
+}
+
+#[test]
+fn oversized_caveat_sets_are_rejected() {
+    // Verifiers hash and set-compare caveats once per link per event, so the
+    // bound belongs in the protocol rather than in each relay's body limit.
+    let many: Vec<String> = (0..200).map(|n| format!("c{n:04}")).collect();
+    let mut sorted = many.clone();
+    sorted.sort();
+    let huge = format!("channel={}", sorted.join(","));
+    assert!(matches!(
+        reject(&huge),
+        CaveatError::TooManyMembers { .. } | CaveatError::TooLong { .. }
+    ));
+
+    let long_tool = format!("tool={}", vec!["a".repeat(60); 40].join(","));
+    assert!(Caveats::parse(&long_tool).is_err());
 }

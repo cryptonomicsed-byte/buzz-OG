@@ -21,19 +21,20 @@ use buzz_core::kind::{
     KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
     KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
     KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
-    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
-    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
-    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
-    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
-    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
-    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
-    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MANDATE_GRANT,
+    KIND_MANDATE_REVOKE, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
+    KIND_PRESENCE_UPDATE, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION,
+    KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED,
+    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED,
+    KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
+    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
+    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
+    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -304,6 +305,8 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // NIP-MP: a project is repository metadata — grouping repositories needs
         // the same scope as announcing them.
         KIND_PROJECT => Ok(Scope::ReposWrite),
+        // NIP-CM mandates describe who may act, so they sit with identity writes.
+        KIND_MANDATE_GRANT | KIND_MANDATE_REVOKE => Ok(Scope::UsersWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -1592,6 +1595,113 @@ fn validate_agent_turn_metric_envelope(event: &nostr::Event) -> Result<(), Strin
     Ok(())
 }
 
+/// Validate a NIP-CM capability mandate grant (kind:50001).
+///
+/// The chain is fully verified here — signatures, linkage, attenuation, and
+/// depth — so a malformed or widening chain is never stored. Verification is
+/// bounded work: `buzz_mandate::MAX_CHAIN_LEN` caps it at four Schnorr checks.
+///
+/// Revocation is deliberately NOT applied at ingest. A grant and the kind:50002
+/// that kills it can arrive in either order, and dropping a grant because a
+/// revocation happens to be known would make storage depend on delivery order.
+/// Revocation is a read-time question, which is where the NIP puts it.
+fn validate_mandate_grant_envelope(event: &Event) -> Result<(), String> {
+    let chain = buzz_mandate::MandateChain::from_json(&event.content)
+        .map_err(|e| format!("mandate grant content is not a valid chain: {e}"))?;
+
+    // `TrustAnchor::unchecked` is deliberate here and only here: ingest decides
+    // whether an event is well-formed enough to store, not whether anyone
+    // should act on it. The relay has no view of which roots a given reader
+    // trusts, and refusing to store a chain because *this* relay does not know
+    // its root would make storage depend on a policy that belongs to the
+    // verifier. Anything that turns a mandate into a permission MUST supply a
+    // real anchor — see `docs/nips/NIP-CM.md` § Security Properties.
+    let mandate = chain
+        .verify(
+            &buzz_mandate::TrustAnchor::unchecked(),
+            &buzz_mandate::RevocationSet::new(),
+        )
+        .map_err(|e| format!("mandate chain does not verify: {e}"))?;
+
+    // Only a party to the delegation may publish it. Without this, anyone could
+    // republish someone else's grant, and the relay would host authority
+    // records nobody in them chose to make public.
+    let author = event.pubkey;
+    let is_party =
+        *mandate.subject() == author || chain.links().iter().any(|link| *link.issuer() == author);
+    if !is_party {
+        return Err(
+            "mandate grant must be published by a link issuer or the leaf subject".to_string(),
+        );
+    }
+
+    // A `p` tag naming the subject makes the grant findable by the holder with
+    // an ordinary p-filtered query.
+    //
+    // It is required only when someone *else* publishes the grant. A subject
+    // republishing its own mandate cannot carry one: the nostr crate strips a
+    // `p` tag equal to the event's own pubkey during signing, so demanding it
+    // here would make self-publication impossible. That case needs no tag
+    // anyway — the event is already findable by its author.
+    let p_tags: Vec<&str> = event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let parts = tag.as_slice();
+            (parts.len() >= 2 && parts[0].as_str() == "p").then(|| parts[1].as_str())
+        })
+        .collect();
+
+    let subject_hex = mandate.subject().to_hex();
+    let self_published = author == *mandate.subject();
+
+    if p_tags.len() > 1 {
+        return Err(format!(
+            "mandate grant must have at most one `p` tag (got {})",
+            p_tags.len()
+        ));
+    }
+    match p_tags.first() {
+        Some(p) if *p != subject_hex => {
+            return Err("mandate grant `p` tag must equal the leaf subject".to_string());
+        }
+        None if !self_published => {
+            return Err("mandate grant must carry a `p` tag naming the leaf subject".to_string());
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Validate a NIP-CM mandate revocation (kind:50002).
+///
+/// Shape only. Whether this author is *entitled* to revoke the named link
+/// depends on a chain the relay may never have seen, so per NIP-CM that check
+/// belongs to whoever verifies a mandate against the revocation set.
+fn validate_mandate_revoke_envelope(event: &Event) -> Result<(), String> {
+    let link_tags: Vec<&str> = event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let parts = tag.as_slice();
+            (parts.len() >= 2 && parts[0].as_str() == "link").then(|| parts[1].as_str())
+        })
+        .collect();
+
+    if link_tags.len() != 1 {
+        return Err(format!(
+            "mandate revocation must have exactly one `link` tag (got {})",
+            link_tags.len()
+        ));
+    }
+
+    buzz_mandate::LinkId::from_hex(link_tags[0])
+        .map_err(|_| "mandate revocation `link` tag must be 64 lowercase hex chars".to_string())?;
+
+    Ok(())
+}
+
 /// Parse a NIP-ER `not_before` tag value into a Unix timestamp.
 ///
 /// The value MUST be a decimal integer string containing only ASCII digits, with
@@ -2412,6 +2522,16 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_TEAM_CATALOG {
         validate_team_catalog_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_MANDATE_GRANT {
+        validate_mandate_grant_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_MANDATE_REVOKE {
+        validate_mandate_revoke_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -3516,6 +3636,165 @@ mod tests {
             .tags(nostr_tags)
             .sign_with_keys(&keys)
             .unwrap()
+    }
+
+    // --- NIP-CM capability mandates -------------------------------------
+
+    /// owner → planner → worker, with the planner narrowing what it received.
+    fn mandate_fixture() -> (
+        nostr::Keys,
+        nostr::Keys,
+        nostr::Keys,
+        buzz_mandate::MandateChain,
+    ) {
+        let owner = nostr::Keys::generate();
+        let planner = nostr::Keys::generate();
+        let worker = nostr::Keys::generate();
+
+        let chain = buzz_mandate::MandateChain::root(
+            &owner,
+            &planner.public_key(),
+            buzz_mandate::Caveats::parse("channel=engineering,general&depth=2&kind=9,40002")
+                .expect("root caveats"),
+        )
+        .expect("root")
+        .delegate(
+            &planner,
+            &worker.public_key(),
+            buzz_mandate::Caveats::parse("channel=engineering&depth=1&kind=9").expect("caveats"),
+        )
+        .expect("delegate");
+
+        (owner, planner, worker, chain)
+    }
+
+    fn mandate_grant_event(signer: &nostr::Keys, content: &str, p_tag: Option<&str>) -> Event {
+        let tags: Vec<nostr::Tag> = p_tag
+            .into_iter()
+            .map(|p| nostr::Tag::parse(["p", p]).expect("p tag"))
+            .collect();
+        nostr::EventBuilder::new(nostr::Kind::Custom(KIND_MANDATE_GRANT as u16), content)
+            .tags(tags)
+            .sign_with_keys(signer)
+            .expect("sign")
+    }
+
+    #[test]
+    fn mandate_grant_accepts_a_chain_published_by_the_root_issuer() {
+        let (owner, _, worker, chain) = mandate_fixture();
+        let event = mandate_grant_event(
+            &owner,
+            &chain.to_json().expect("json"),
+            Some(&worker.public_key().to_hex()),
+        );
+        assert!(validate_mandate_grant_envelope(&event).is_ok());
+    }
+
+    #[test]
+    fn mandate_grant_accepts_a_chain_published_by_the_subject() {
+        // The holder republishing its own mandate is the common case: the
+        // issuer hands it over out of band and the agent makes it findable.
+        let (_, _, worker, chain) = mandate_fixture();
+        let event = mandate_grant_event(
+            &worker,
+            &chain.to_json().expect("json"),
+            Some(&worker.public_key().to_hex()),
+        );
+        validate_mandate_grant_envelope(&event).expect("subject may publish");
+    }
+
+    #[test]
+    fn mandate_grant_rejects_a_publisher_outside_the_chain() {
+        let (_, _, worker, chain) = mandate_fixture();
+        let stranger = nostr::Keys::generate();
+        let event = mandate_grant_event(
+            &stranger,
+            &chain.to_json().expect("json"),
+            Some(&worker.public_key().to_hex()),
+        );
+        let err = validate_mandate_grant_envelope(&event).unwrap_err();
+        assert!(err.contains("link issuer or the leaf subject"), "{err}");
+    }
+
+    #[test]
+    fn mandate_grant_rejects_malformed_content() {
+        let owner = nostr::Keys::generate();
+        let event = mandate_grant_event(&owner, "not a chain", Some(&owner.public_key().to_hex()));
+        let err = validate_mandate_grant_envelope(&event).unwrap_err();
+        assert!(err.contains("not a valid chain"), "{err}");
+    }
+
+    #[test]
+    fn mandate_grant_rejects_a_chain_whose_caveats_were_edited() {
+        // Widening after signing is the attack the relay must never store:
+        // the edit changes the link id, so the signature no longer verifies.
+        let (owner, _, worker, chain) = mandate_fixture();
+        let mut envelope: serde_json::Value =
+            serde_json::from_str(&chain.to_json().expect("json")).expect("value");
+        envelope["links"][1]["caveats"] =
+            serde_json::Value::String("channel=engineering,general&depth=1&kind=9,40002".into());
+
+        let event = mandate_grant_event(
+            &owner,
+            &envelope.to_string(),
+            Some(&worker.public_key().to_hex()),
+        );
+        let err = validate_mandate_grant_envelope(&event).unwrap_err();
+        assert!(err.contains("does not verify"), "{err}");
+    }
+
+    #[test]
+    fn mandate_grant_requires_a_p_tag_naming_the_subject_unless_self_published() {
+        let (owner, planner, worker, chain) = mandate_fixture();
+        let json = chain.to_json().expect("json");
+
+        let missing = mandate_grant_event(&owner, &json, None);
+        let err = validate_mandate_grant_envelope(&missing).unwrap_err();
+        assert!(err.contains("must carry a `p` tag"), "{err}");
+
+        // The subject's own republication carries no `p` tag, because the nostr
+        // crate strips a self-referential one while signing. Requiring it would
+        // make the common case unpublishable.
+        let self_published = mandate_grant_event(&worker, &json, None);
+        validate_mandate_grant_envelope(&self_published).expect("subject may self-publish");
+
+        // Pointing at the planner (an intermediate) instead of the subject.
+        let wrong = mandate_grant_event(&owner, &json, Some(&planner.public_key().to_hex()));
+        let err = validate_mandate_grant_envelope(&wrong).unwrap_err();
+        assert!(err.contains("must equal the leaf subject"), "{err}");
+
+        let right = mandate_grant_event(&owner, &json, Some(&worker.public_key().to_hex()));
+        assert!(validate_mandate_grant_envelope(&right).is_ok());
+    }
+
+    #[test]
+    fn mandate_revocation_requires_one_well_formed_link_tag() {
+        let valid = make_event_with_tags(KIND_MANDATE_REVOKE, "", &[&["link", &"a".repeat(64)]]);
+        assert!(validate_mandate_revoke_envelope(&valid).is_ok());
+
+        let none = make_event_with_tags(KIND_MANDATE_REVOKE, "", &[]);
+        assert!(validate_mandate_revoke_envelope(&none)
+            .unwrap_err()
+            .contains("exactly one `link` tag"));
+
+        let two = make_event_with_tags(
+            KIND_MANDATE_REVOKE,
+            "",
+            &[&["link", &"a".repeat(64)], &["link", &"b".repeat(64)]],
+        );
+        assert!(validate_mandate_revoke_envelope(&two)
+            .unwrap_err()
+            .contains("exactly one `link` tag"));
+
+        let short = make_event_with_tags(KIND_MANDATE_REVOKE, "", &[&["link", "deadbeef"]]);
+        assert!(validate_mandate_revoke_envelope(&short)
+            .unwrap_err()
+            .contains("64 lowercase hex"));
+
+        let upper = make_event_with_tags(KIND_MANDATE_REVOKE, "", &[&["link", &"A".repeat(64)]]);
+        assert!(validate_mandate_revoke_envelope(&upper)
+            .unwrap_err()
+            .contains("64 lowercase hex"));
     }
 
     #[test]

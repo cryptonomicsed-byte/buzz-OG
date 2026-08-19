@@ -301,6 +301,7 @@ impl Link {
 /// `parent` is `null` on the root link and a 64-character lowercase hex link id
 /// on every other link.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct WireLink {
     /// Parent link id, or `null` for the root.
     pub parent: Option<String>,

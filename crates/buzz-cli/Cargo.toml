@@ -67,6 +67,7 @@ infer = "0.19"
 url = { workspace = true }
 
 # Persona pack parsing, validation, and resolution
+buzz-mandate = { path = "../buzz-mandate" }
 buzz-persona = { path = "../buzz-persona" }
 
 # Platform app-data dir resolution — locates the desktop app's

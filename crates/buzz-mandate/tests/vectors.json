@@ -1,11 +1,162 @@
 {
+  "actor_binding": [
+    {
+      "actor": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "allowed": true,
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "subject_in_scope",
+      "now": 1799000000,
+      "request": {
+        "channels": [
+          "engineering"
+        ],
+        "kind": 9
+      }
+    },
+    {
+      "actor": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "allowed": false,
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "name": "truncated_prefix_names_another_subject",
+      "now": 1799000000,
+      "reason": "wrong_subject",
+      "request": {
+        "channels": [
+          "general"
+        ],
+        "kind": 9
+      },
+      "why": "the prefix grants #general, but to the planner — not to the worker"
+    },
+    {
+      "actor": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "allowed": true,
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "name": "truncated_prefix_is_valid_for_its_own_subject",
+      "now": 1799000000,
+      "request": {
+        "channels": [
+          "general"
+        ],
+        "kind": 9
+      }
+    },
+    {
+      "actor": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
+      "allowed": false,
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "a_third_party_holds_nothing",
+      "now": 1799000000,
+      "reason": "wrong_subject",
+      "request": {
+        "channels": [
+          "engineering"
+        ],
+        "kind": 9
+      }
+    },
+    {
+      "actor": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "allowed": false,
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "every_targeted_channel_must_be_in_scope",
+      "now": 1799000000,
+      "reason": "out_of_scope",
+      "request": {
+        "channels": [
+          "engineering",
+          "secrets"
+        ],
+        "kind": 9
+      },
+      "why": "an event may carry many h tags; checking only the first authorizes the rest"
+    }
+  ],
   "authorization": [
     {
       "allowed": true,
       "caveats": "channel=engineering&kind=9",
       "now": 1000,
       "request": {
-        "channel": "engineering",
+        "channels": [
+          "engineering"
+        ],
         "kind": 9
       },
       "uses_consumed": 0
@@ -16,7 +167,9 @@
       "now": 1000,
       "reason": "out_of_scope",
       "request": {
-        "channel": "engineering",
+        "channels": [
+          "engineering"
+        ],
         "kind": 9
       },
       "uses_consumed": 0
@@ -30,6 +183,20 @@
         "kind": 9
       },
       "uses_consumed": 0
+    },
+    {
+      "allowed": false,
+      "caveats": "channel=engineering",
+      "now": 1000,
+      "reason": "out_of_scope",
+      "request": {
+        "channels": [
+          "engineering",
+          "secrets"
+        ]
+      },
+      "uses_consumed": 0,
+      "why": "every channel an action targets must be permitted, not just the first"
     },
     {
       "allowed": false,
@@ -107,7 +274,7 @@
             "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
             "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             "parent": null,
-            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
             "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
           }
         ],
@@ -133,14 +300,14 @@
             "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
             "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             "parent": null,
-            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
             "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
           },
           {
             "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
             "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
             "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
-            "sig": "4af78e878814ac1bd4d4d02c8ad1910234056f52434ada1b4fa5fe070ca1a7d3384d600735f9e269b50061164fb578f9c502c8d31e23888365d09fe6a85871eb",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
             "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
           }
         ],
@@ -168,21 +335,21 @@
             "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
             "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             "parent": null,
-            "sig": "7fe72b02b1f9e42e2546902e11681b341c5290e2cc59e8a99c1472a5477a03187c680e97c55ced9e2706da8474d3567fe5ad4384b1f0b91474f6430a74311fcc",
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
             "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
           },
           {
             "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
             "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
             "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
-            "sig": "4af78e878814ac1bd4d4d02c8ad1910234056f52434ada1b4fa5fe070ca1a7d3384d600735f9e269b50061164fb578f9c502c8d31e23888365d09fe6a85871eb",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
             "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
           },
           {
             "caveats": "channel=engineering&depth=0&expires=1799980000&kind=9&tool=shell&uses=2",
             "issuer": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
             "parent": "e6ccb95e845533465f11406000249be5cf56f8eabbd5cf58baaf5ef746983cf7",
-            "sig": "24bf5e9cace1930ed7da83287b7cf93ab14c9e2ef5b5312bf8a51118101247dc4175b15a4ef5114da6c83dfbebff388d4c36a27a1167f9674cc74843f164b520",
+            "sig": "9cec39529a57abada6fafe8eec1c28ee636dbee08a35e98dc9ec7780a50fa373dc3d76fe43997ae64b56893ac3edf21450711a743580a3444265a21eddb1f742",
             "subject": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13"
           }
         ],
@@ -212,7 +379,7 @@
             "caveats": "",
             "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             "parent": null,
-            "sig": "d3ce4cda5f5ad7fc1a6c3a0bc886973792e542197c666a02da99b5bbd9d6a84f9562dd309b020e1a71d360e3b8f3fd8c3883b4173cd5cb0e30e535d986bd4a8e",
+            "sig": "6bf47331573aa065319b5c416e86d3a7c6b59c28707022c7bee69bdfc1885c65b1c02393873ad1b1056d892287fcebc08cf036cb661808ad7ba152d0bfaafc84",
             "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
           }
         ],
@@ -324,6 +491,171 @@
       "reason": "empty time window"
     }
   ],
+  "invalid_chains": [
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering,general&depth=1&expires=1799990000&kind=9,40002&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "widened_after_signing",
+      "reason": "leaf caveats were edited, so the signature no longer matches the link id"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": null,
+            "sig": "e955c98f44055bd35a5e82e121a0ab5b775f1760ebaec0365dcd470c2337af3f93a2e205f61b57efc2d69d7fc440a0bc4e0082a0f69202fd4c84b5f5a8e6c94d",
+            "subject": "acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbe"
+          }
+        ],
+        "v": 1
+      },
+      "name": "spliced_link",
+      "reason": "link 1 belongs to another chain: its parent is not link 0's id"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "root_with_parent",
+      "reason": "the root link must have parent: null"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          },
+          {
+            "caveats": "channel=engineering&depth=1&expires=1799990000&kind=9&uses=5",
+            "issuer": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+            "parent": "f77f2295c43f2c1c3ac07fdaa8a840a12a360714e3cd32c31251c5bb1a981500",
+            "sig": "e4d035da2a103f3b13ec3592f2c66606f2a4a5aa23a2ca39747f070dcb3ffad77a95bbe6ea614f251dae645186541dd6ba746b5888e2565bf520e44d277dddbc",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "over_max_chain_len",
+      "reason": "five links exceeds the four-link maximum"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "pad": "x",
+        "v": 1
+      },
+      "name": "unknown_envelope_field",
+      "reason": "unknown fields are refused so one chain cannot have two encodings"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "pad": "x",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "name": "unknown_link_field",
+      "reason": "unknown link fields are refused for the same reason"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 2
+      },
+      "name": "unsupported_version",
+      "reason": "envelope version must be 1"
+    }
+  ],
   "keys": {
     "helper": {
       "pubkey": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
@@ -425,5 +757,65 @@
   ],
   "note": "Generated by `cargo run -p buzz-mandate --example mandate-vectors`. Test keys only.",
   "protocol": "NIP-CM",
+  "trust_anchor": [
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "channel=engineering,general&depth=2&expires=1800000000&kind=9,40002",
+            "issuer": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "parent": null,
+            "sig": "6722647d97c36b9efbe4c643ae32902225f878017baaf4ed23da0886024b2790697286be80309a7966016f7889a704969969f7ad3ac6f99b8ed9d5fb37471910",
+            "subject": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          }
+        ],
+        "v": 1
+      },
+      "name": "trusted_root",
+      "trusted_roots": [
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      ],
+      "valid": true
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "",
+            "issuer": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
+            "parent": null,
+            "sig": "e86586d8ffd510545d925c28921f994107ce83f7634198ced2d004e945983efd520480d3e7ff3bb9c6feec0d01820ac620f4ed3ecc2ca9768d3e4fba14ffefae",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "self_issued_unconstrained_chain",
+      "reason": "untrusted_root",
+      "trusted_roots": [
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      ],
+      "valid": false,
+      "why": "internally flawless and grants everything; only the anchor stops it"
+    },
+    {
+      "envelope": {
+        "links": [
+          {
+            "caveats": "",
+            "issuer": "e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
+            "parent": null,
+            "sig": "e86586d8ffd510545d925c28921f994107ce83f7634198ced2d004e945983efd520480d3e7ff3bb9c6feec0d01820ac620f4ed3ecc2ca9768d3e4fba14ffefae",
+            "subject": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ],
+        "v": 1
+      },
+      "name": "self_issued_chain_is_internally_consistent",
+      "trusted_roots": null,
+      "valid": true,
+      "why": "with no anchor, structure alone is all that is checked — which is the trap"
+    }
+  ],
   "version": 1
 }

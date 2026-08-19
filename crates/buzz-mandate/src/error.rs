@@ -13,6 +13,27 @@ pub struct InvalidLinkId;
 /// A caveat string was malformed, non-canonical, or semantically empty.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CaveatError {
+    /// The encoded caveat set exceeded [`crate::caveat::MAX_CAVEATS_LEN`].
+    #[error("caveats are {len} bytes, exceeding the maximum of {max}")]
+    TooLong {
+        /// Actual encoded length in bytes.
+        len: usize,
+        /// The protocol maximum.
+        max: usize,
+    },
+
+    /// A set-valued dimension had more members than
+    /// [`crate::caveat::MAX_SET_MEMBERS`].
+    #[error("caveat dimension {dimension:?} has {count} members, exceeding the maximum of {max}")]
+    TooManyMembers {
+        /// The oversized dimension.
+        dimension: String,
+        /// Actual member count.
+        count: usize,
+        /// The protocol maximum.
+        max: usize,
+    },
+
     /// The caveat string contained a byte that is never legal (whitespace,
     /// control character, or non-ASCII).
     #[error("caveats contain an illegal byte at position {position}")]
@@ -117,6 +138,18 @@ pub enum MandateError {
     /// The chain had no links.
     #[error("mandate chain is empty")]
     EmptyChain,
+
+    /// The chain's root is not a key the verifier derives authority from.
+    ///
+    /// A structurally perfect chain proves only that authority flowed correctly
+    /// from its own root. Anyone can invent a keypair and self-issue an
+    /// unconstrained mandate, so a verifier that skips this check grants
+    /// everything to everyone.
+    #[error("mandate chain is rooted at untrusted key {root}")]
+    UntrustedRoot {
+        /// The root issuer the chain claims authority from.
+        root: String,
+    },
 
     /// The chain exceeded [`crate::MAX_CHAIN_LEN`].
     #[error("mandate chain has {len} links, exceeding the maximum of {max}")]

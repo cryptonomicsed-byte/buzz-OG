@@ -3,7 +3,8 @@
 use std::collections::BTreeSet;
 
 use buzz_mandate::{
-    Caveats, MandateChain, MandateError, Request, RevocationSet, VerifyContext, MAX_CHAIN_LEN,
+    Caveats, MandateChain, MandateError, Request, RevocationSet, TrustAnchor, VerifyContext,
+    MAX_CHAIN_LEN,
 };
 use nostr::{Keys, PublicKey};
 use serde_json::Value;
@@ -36,6 +37,11 @@ impl Cast {
         }
     }
 
+    /// The owner is the only root this cast's verifiers trust.
+    fn anchor(&self) -> TrustAnchor {
+        TrustAnchor::root(&self.owner.public_key())
+    }
+
     /// owner → planner → worker.
     fn two_hop(&self) -> MandateChain {
         MandateChain::root(&self.owner, &self.planner.public_key(), broad())
@@ -51,7 +57,9 @@ impl Cast {
 fn a_two_hop_chain_verifies() {
     let cast = Cast::new();
     let chain = cast.two_hop();
-    let mandate = chain.verify(&RevocationSet::new()).expect("verify");
+    let mandate = chain
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
 
     assert_eq!(mandate.root_authority(), &cast.owner.public_key());
     assert_eq!(mandate.subject(), &cast.worker.public_key());
@@ -63,7 +71,9 @@ fn a_two_hop_chain_verifies() {
 fn a_root_only_chain_verifies() {
     let cast = Cast::new();
     let chain = MandateChain::root(&cast.owner, &cast.planner.public_key(), broad()).expect("root");
-    let mandate = chain.verify(&RevocationSet::new()).expect("verify");
+    let mandate = chain
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
     assert_eq!(mandate.hops(), 1);
     assert_eq!(mandate.subject(), &cast.planner.public_key());
 }
@@ -79,12 +89,14 @@ fn the_json_envelope_round_trips() {
 fn a_verified_mandate_authorizes_only_what_the_leaf_permits() {
     let cast = Cast::new();
     let chain = cast.two_hop();
-    let mandate = chain.verify(&RevocationSet::new()).expect("verify");
-    let context = VerifyContext::at(1000);
+    let mandate = chain
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
+    let context = VerifyContext::at_untracked(1000);
 
     let permitted = Request {
         kind: Some(9),
-        channel: Some("engineering"),
+        channels: &["engineering"],
         ..Request::default()
     };
     assert!(mandate
@@ -94,7 +106,7 @@ fn a_verified_mandate_authorizes_only_what_the_leaf_permits() {
     // The root allowed `general` and kind 40002; the planner kept both for
     // itself, so the worker never received them.
     let wrong_channel = Request {
-        channel: Some("general"),
+        channels: &["general"],
         ..permitted.clone()
     };
     assert!(mandate
@@ -191,7 +203,9 @@ fn the_leaf_is_the_intersection_of_the_whole_chain() {
     ];
 
     for chain in &chains {
-        chain.verify(&RevocationSet::new()).expect("verify");
+        chain
+            .verify(&cast.anchor(), &RevocationSet::new())
+            .expect("verify");
         assert_leaf_equals_intersection(chain);
     }
 }
@@ -243,7 +257,7 @@ fn a_widened_chain_cannot_be_forged_after_the_fact() {
 
     let forged = MandateChain::from_json(&envelope.to_string()).expect("parse");
     let error = forged
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect_err("forged caveats must not verify");
     assert!(
         matches!(error, MandateError::BadSignature { index: 1 }),
@@ -265,7 +279,9 @@ fn depth_bounds_sub_delegation() {
             caveats("channel=engineering&depth=0&expires=1500&kind=9"),
         )
         .expect("third hop");
-    three_hop.verify(&RevocationSet::new()).expect("verify");
+    three_hop
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
+        .expect("verify");
 
     // A fourth hop is refused: the third link has no depth left to give.
     let fifth = Keys::generate();
@@ -297,7 +313,9 @@ fn the_protocol_caps_chain_length_even_without_a_depth_caveat() {
         issuer = next;
     }
     assert_eq!(chain.links().len(), MAX_CHAIN_LEN);
-    chain.verify(&RevocationSet::new()).expect("verify");
+    chain
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
 
     let error = chain
         .delegate(&issuer, &Keys::generate().public_key(), Caveats::default())
@@ -345,16 +363,16 @@ fn truncating_a_chain_yields_authority_the_truncator_cannot_use() {
 
     let truncated = MandateChain::from_links(vec![full.links()[0].clone()]);
     let wider = truncated
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect("a prefix is a valid chain");
 
     // It really is wider: the channel the planner withheld is back.
     let withheld = Request {
         kind: Some(9),
-        channel: Some("general"),
+        channels: &["general"],
         ..Request::default()
     };
-    let context = VerifyContext::at(1000);
+    let context = VerifyContext::at_untracked(1000);
     assert!(wider
         .authorizes(&cast.planner.public_key(), &withheld, &context)
         .is_ok());
@@ -389,7 +407,7 @@ fn a_link_cannot_be_spliced_into_another_chain() {
 
     let spliced = MandateChain::from_json(&envelope.to_string()).expect("parse");
     let error = spliced
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect_err("splice must not verify");
     assert!(
         matches!(error, MandateError::ParentMismatch { index: 1 }),
@@ -413,7 +431,7 @@ fn a_chain_may_not_loop_back_to_a_key_it_already_passed_through() {
         .expect("issue-time checks do not catch cycles");
 
     let error = looped
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect_err("cycle must not verify");
     assert!(
         matches!(error, MandateError::RepeatedSubject { index: 2 }),
@@ -430,7 +448,7 @@ fn a_chain_may_not_delegate_back_to_its_root_authority() {
         .expect("issue-time checks do not catch cycles");
 
     let error = looped
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect_err("cycle must not verify");
     assert!(
         matches!(error, MandateError::RepeatedSubject { index: 1 }),
@@ -460,7 +478,7 @@ fn a_root_link_may_not_declare_a_parent() {
 
     let malformed = MandateChain::from_json(&envelope.to_string()).expect("parse");
     let error = malformed
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect_err("root with a parent must not verify");
     assert!(
         matches!(error, MandateError::BadLinkage { index: 0 }),
@@ -515,10 +533,10 @@ fn revoking_a_link_invalidates_everything_below_it() {
     let chain = cast.two_hop();
 
     let root_id = chain.links()[0].id();
-    let revoked: RevocationSet = [root_id].into_iter().collect();
+    let revoked: RevocationSet = [(root_id, cast.owner.public_key())].into_iter().collect();
 
     let error = chain
-        .verify(&revoked)
+        .verify(&cast.anchor(), &revoked)
         .expect_err("revoked root must not verify");
     assert!(
         matches!(error, MandateError::Revoked { index: 0 }),
@@ -532,12 +550,14 @@ fn revoking_a_leaf_leaves_its_parent_usable() {
     let chain = cast.two_hop();
 
     let leaf_id = chain.links()[1].id();
-    let revoked: RevocationSet = [leaf_id].into_iter().collect();
-    assert!(chain.verify(&revoked).is_err());
+    let revoked: RevocationSet = [(leaf_id, cast.planner.public_key())].into_iter().collect();
+    assert!(chain.verify(&cast.anchor(), &revoked).is_err());
 
     // The planner's own grant is untouched by revoking what it handed onward.
     let parent_only = MandateChain::from_links(vec![chain.links()[0].clone()]);
-    parent_only.verify(&revoked).expect("parent still valid");
+    parent_only
+        .verify(&cast.anchor(), &revoked)
+        .expect("parent still valid");
 }
 
 // --- time ----------------------------------------------------------------
@@ -551,24 +571,28 @@ fn expiry_is_decided_by_the_verifiers_clock_alone() {
     let cast = Cast::new();
     let chain = cast.two_hop();
     let mandate = chain
-        .verify(&RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect("structure is time-independent");
     let subject = cast.worker.public_key();
 
     let request = Request {
         kind: Some(9),
-        channel: Some("engineering"),
+        channels: &["engineering"],
         ..Request::default()
     };
 
     assert!(mandate
-        .authorizes(&subject, &request, &VerifyContext::at(1499))
+        .authorizes(&subject, &request, &VerifyContext::at_untracked(1499))
         .is_ok());
     assert!(mandate
-        .authorizes(&subject, &request, &VerifyContext::at(1500))
+        .authorizes(&subject, &request, &VerifyContext::at_untracked(1500))
         .is_err());
     assert!(mandate
-        .authorizes(&subject, &request, &VerifyContext::at(u64::from(u32::MAX)))
+        .authorizes(
+            &subject,
+            &request,
+            &VerifyContext::at_untracked(u64::from(u32::MAX))
+        )
         .is_err());
 }
 
@@ -618,4 +642,121 @@ fn subject_and_issuer_are_recoverable_for_audit() {
         .map(|l| (*l.issuer(), *l.subject()))
         .collect();
     assert_eq!(actual, expected);
+}
+
+// --- trust anchoring -----------------------------------------------------
+
+#[test]
+fn a_chain_rooted_at_an_untrusted_key_does_not_verify() {
+    // The attack this closes: nothing stops an attacker generating a fresh
+    // keypair and granting itself everything. Such a chain is internally
+    // flawless — signatures, linkage, attenuation all check out — so a verifier
+    // that only asks "is this chain well-formed?" hands over full authority.
+    let cast = Cast::new();
+    let impostor = Keys::generate();
+
+    let self_issued = MandateChain::root(
+        &impostor,
+        &cast.worker.public_key(),
+        Caveats::default(), // unconstrained: any kind, any channel, forever
+    )
+    .expect("root");
+
+    // Structurally perfect...
+    self_issued
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
+        .expect("internally consistent");
+
+    // ...and worth nothing against a real anchor.
+    let error = self_issued
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect_err("untrusted root must not verify");
+    assert!(
+        matches!(error, MandateError::UntrustedRoot { ref root } if *root == impostor.public_key().to_hex()),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn an_anchor_may_trust_several_roots() {
+    let cast = Cast::new();
+    let other = Keys::generate();
+    let anchor = TrustAnchor::any_of([&cast.owner.public_key(), &other.public_key()]);
+
+    cast.two_hop()
+        .verify(&anchor, &RevocationSet::new())
+        .expect("owner is one of the trusted roots");
+
+    let stranger = Keys::generate();
+    let theirs = MandateChain::root(&stranger, &cast.worker.public_key(), broad()).expect("root");
+    assert!(theirs.verify(&anchor, &RevocationSet::new()).is_err());
+}
+
+// --- revocation authority ------------------------------------------------
+
+#[test]
+fn a_revocation_counts_only_from_the_issuer_or_the_root() {
+    let cast = Cast::new();
+    let chain = cast.two_hop();
+    let leaf_id = chain.links()[1].id();
+
+    // The planner issued the leaf, so it may revoke it.
+    let by_issuer: RevocationSet = [(leaf_id, cast.planner.public_key())].into_iter().collect();
+    assert!(chain.verify(&cast.anchor(), &by_issuer).is_err());
+
+    // So may the root authority, over the whole chain beneath it.
+    let by_root: RevocationSet = [(leaf_id, cast.owner.public_key())].into_iter().collect();
+    assert!(chain.verify(&cast.anchor(), &by_root).is_err());
+
+    // A stranger naming the same id is noise. Honouring it would let anyone
+    // disable a mandate they were never party to.
+    let stranger = Keys::generate();
+    let by_stranger: RevocationSet = [(leaf_id, stranger.public_key())].into_iter().collect();
+    chain
+        .verify(&cast.anchor(), &by_stranger)
+        .expect("a stranger cannot revoke");
+
+    // Nor may the subject revoke the grant it holds — only the keys above it.
+    let by_subject: RevocationSet = [(leaf_id, cast.worker.public_key())].into_iter().collect();
+    chain
+        .verify(&cast.anchor(), &by_subject)
+        .expect("the subject is not an issuer of its own link");
+}
+
+// --- envelope strictness -------------------------------------------------
+
+#[test]
+fn unknown_envelope_fields_are_refused() {
+    // A tolerated field is a place to hide bytes that change the grant event's
+    // id while leaving the chain identical — which would hand a subject a fresh
+    // `uses` budget for free if a verifier keyed its counter on the event id.
+    let chain = Cast::new().two_hop();
+    let mut envelope: Value =
+        serde_json::from_str(&chain.to_json().expect("serialise")).expect("json");
+    envelope["pad"] = Value::String("x".into());
+    assert!(MandateChain::from_json(&envelope.to_string()).is_err());
+
+    let mut padded_link: Value =
+        serde_json::from_str(&chain.to_json().expect("serialise")).expect("json");
+    padded_link["links"][0]["pad"] = Value::String("x".into());
+    assert!(MandateChain::from_json(&padded_link.to_string()).is_err());
+}
+
+#[test]
+fn the_leaf_id_is_the_stable_identity_of_a_mandate() {
+    // `uses` accounting has to key on something the subject cannot change by
+    // re-encoding. The leaf link id is a hash over canonical fields and commits
+    // to the whole chain above it; a grant event id is neither.
+    let cast = Cast::new();
+    let chain = cast.two_hop();
+    let json = chain.to_json().expect("serialise");
+
+    let reparsed = MandateChain::from_json(&json).expect("parse");
+    let a = chain
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
+    let b = reparsed
+        .verify(&cast.anchor(), &RevocationSet::new())
+        .expect("verify");
+    assert_eq!(a.leaf_id(), b.leaf_id());
 }

@@ -5,10 +5,17 @@
  * reference implementation. Both run against `crates/buzz-mandate/tests/
  * vectors.json`, so this file and the Rust crate cannot drift apart silently.
  *
- * Scope: parsing, canonical encoding, narrowing, and authorization. Signature
- * and chain verification stay in Rust, on the relay and in the CLI — the client
- * needs to *show* a user what an agent may do, which is exactly this much.
- * Rendering scope from an unverified chain is fine; granting on one is not.
+ * Scope: parsing, canonical encoding, narrowing, and the caveat half of
+ * authorization. Signature checking, chain linkage, attenuation across links,
+ * and root trust all stay in Rust — on the relay and in the CLI — because the
+ * client's job is to *show* a user what an agent may do.
+ *
+ * That boundary is load-bearing, so this module refuses to look like a full
+ * verifier: `permits()` is named for what it actually checks, and `authorizes()`
+ * demands the subject and actor so it cannot silently skip the binding that
+ * defeats chain truncation. Neither knows whether the chain was signed, whether
+ * each link narrows the last, or whether its root is trusted. Rendering scope
+ * from an unverified chain is fine; granting on one is not.
  */
 
 /** Dimension names, in the canonical (ascending lexicographic) order. */
@@ -29,6 +36,8 @@ const MAX_KIND = 65535;
 const MAX_DEPTH = 255;
 const MAX_U32 = 4294967295;
 const MAX_NAME_LEN = 64;
+const MAX_CAVEATS_LEN = 2048;
+const MAX_SET_MEMBERS = 64;
 
 /** A parsed caveat set. An absent field is unconstrained. */
 export interface Caveats {
@@ -42,12 +51,26 @@ export interface Caveats {
   uses?: number;
 }
 
-/** The action being attempted. Unstated attributes fail closed. */
+/**
+ * The action being attempted. Unstated attributes fail closed.
+ *
+ * The plural fields are plural on purpose: a Nostr event carries as many `h`
+ * and `p` tags as its author chose, and *every* value it states must be in
+ * scope. Checking one and stopping would authorize the rest.
+ */
 export interface MandateRequest {
   kind?: number;
-  channel?: string;
-  peer?: string;
-  tool?: string;
+  channels?: string[];
+  peers?: string[];
+  tools?: string[];
+}
+
+/** The part of a verified mandate this module can reason about. */
+export interface MandateScope {
+  /** Leaf subject — the only key the mandate empowers. */
+  subject: string;
+  /** Leaf caveats, which NIP-CM guarantees are the whole chain's authority. */
+  caveats: Caveats;
 }
 
 /** What the verifier knows that the mandate does not. */
@@ -118,6 +141,11 @@ function parseNumberSet(dimension: string, value: string): number[] {
       );
     }
   }
+  if (members.length > MAX_SET_MEMBERS) {
+    throw new CaveatError(
+      `${dimension}: ${members.length} members exceeds the maximum of ${MAX_SET_MEMBERS}`,
+    );
+  }
   return members;
 }
 
@@ -141,6 +169,11 @@ function parseStringSet(
       );
     }
   }
+  if (members.length > MAX_SET_MEMBERS) {
+    throw new CaveatError(
+      `${dimension}: ${members.length} members exceeds the maximum of ${MAX_SET_MEMBERS}`,
+    );
+  }
   return members;
 }
 
@@ -154,6 +187,12 @@ function parseStringSet(
  */
 export function parseCaveats(input: string): Caveats {
   if (input === "") return {};
+
+  if (input.length > MAX_CAVEATS_LEN) {
+    throw new CaveatError(
+      `caveats are ${input.length} bytes, exceeding the maximum of ${MAX_CAVEATS_LEN}`,
+    );
+  }
 
   for (let index = 0; index < input.length; index += 1) {
     const code = input.charCodeAt(index);
@@ -229,15 +268,29 @@ export function parseCaveats(input: string): Caveats {
   return caveats;
 }
 
-/** Encode to the single legal string form. */
+/**
+ * Encode to the single legal string form.
+ *
+ * Sets are sorted and deduplicated here rather than trusted from the caller —
+ * numerically for `kind`, bytewise otherwise — so a hand-built object cannot
+ * produce a string that would fail `parseCaveats`. There is exactly one legal
+ * encoding of a caveat set, and this function emits it or nothing.
+ */
 export function encodeCaveats(caveats: Caveats): string {
   const clauses: string[] = [];
   for (const dimension of DIMENSIONS) {
     const value = caveats[dimension];
     if (value === undefined) continue;
-    clauses.push(
-      `${dimension}=${Array.isArray(value) ? value.join(",") : value}`,
-    );
+
+    if (Array.isArray(value)) {
+      const members =
+        dimension === "kind"
+          ? [...new Set(value as number[])].sort((a, b) => a - b)
+          : [...new Set(value as string[])].sort();
+      clauses.push(`${dimension}=${members.join(",")}`);
+    } else {
+      clauses.push(`${dimension}=${value}`);
+    }
   }
   return clauses.join("&");
 }
@@ -302,12 +355,15 @@ export function narrows(child: Caveats, parent: Caveats): string | null {
 }
 
 /**
- * Whether these caveats authorize `request` at `context.now`.
+ * Whether these caveats admit `request` at `context.now`.
  *
- * Returns `null` when allowed, or the reason it was denied. Time is read from
+ * Returns `null` when they do, or the reason they do not. Time is read from
  * `context`, never from anything the subject supplies.
+ *
+ * This is the caveat check *only*. It says nothing about who is acting, so it
+ * cannot answer "may this agent do this" on its own — use `authorizes()`.
  */
-export function authorizes(
+export function permits(
   caveats: Caveats,
   request: MandateRequest,
   context: VerifyContext,
@@ -324,12 +380,22 @@ export function authorizes(
     if (!caveats.kind.includes(request.kind)) return "out_of_scope";
   }
 
+  const stated = {
+    channel: request.channels,
+    peer: request.peers,
+    tool: request.tools,
+  } as const;
+
   for (const dimension of ["channel", "peer", "tool"] as const) {
     const permitted = caveats[dimension];
     if (permitted === undefined) continue;
-    const value = request[dimension];
-    if (value === undefined) return "unstated_dimension";
-    if (!permitted.includes(value)) return "out_of_scope";
+
+    const values = stated[dimension];
+    if (values === undefined || values.length === 0)
+      return "unstated_dimension";
+    // Every stated value, not merely the first.
+    if (values.some((value) => !permitted.includes(value)))
+      return "out_of_scope";
   }
 
   if (
@@ -340,6 +406,28 @@ export function authorizes(
   }
 
   return null;
+}
+
+/**
+ * Whether `mandate` authorizes `actor` to perform `request` at `context.now`.
+ *
+ * The `actor === mandate.subject` check is mandatory and comes first: any
+ * holder of a chain can present a *prefix* of it, and prefixes are both valid
+ * and wider. A prefix names an earlier subject, so binding to the actor makes
+ * truncation useless — and forgetting to bind makes it devastating.
+ *
+ * This still does not verify the chain. Callers must have obtained
+ * `mandate.subject` and `mandate.caveats` from a source that did — the relay or
+ * the CLI — because nothing here checks a signature or a root.
+ */
+export function authorizes(
+  mandate: MandateScope,
+  actor: string,
+  request: MandateRequest,
+  context: VerifyContext,
+): DenyReason | null {
+  if (actor !== mandate.subject) return "wrong_subject";
+  return permits(mandate.caveats, request, context);
 }
 
 /**
@@ -356,8 +444,14 @@ export function describeCaveats(caveats: Caveats): string {
     parts.push(`in ${caveats.channel.map((c) => `#${c}`).join(", ")}`);
   if (caveats.tool) parts.push(`tools ${caveats.tool.join(", ")}`);
   if (caveats.peer) parts.push(`with ${caveats.peer.length} peer(s)`);
-  if (caveats.uses) parts.push(`${caveats.uses} use(s)`);
-  if (caveats.expires)
+  if (caveats.uses !== undefined) parts.push(`${caveats.uses} use(s)`);
+  // Compare against undefined, not truthiness: `expires=0` is a real bound, and
+  // treating it as absent would render a lapsed mandate as if it never expired.
+  // `not_before` is rendered for the same reason — a mandate that is not valid
+  // yet must not read as live.
+  if (caveats.not_before !== undefined)
+    parts.push(`from ${new Date(caveats.not_before * 1000).toISOString()}`);
+  if (caveats.expires !== undefined)
     parts.push(`until ${new Date(caveats.expires * 1000).toISOString()}`);
   if (caveats.depth !== undefined) {
     parts.push(

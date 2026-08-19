@@ -24,7 +24,14 @@
 //! NIP-OA; an agent typically holds both, the attestation proving *who owns me*
 //! and a mandate proving *what I may do right now*.
 //!
-//! # The four properties
+//! # The properties
+//!
+//! **Authority has to start somewhere you trust.** A chain proves authority
+//! flowed correctly *from its own root*; it says nothing about whether that
+//! root was entitled to grant anything. Anyone can generate a keypair and
+//! self-issue themselves an unconstrained mandate. So [`MandateChain::verify`]
+//! takes a [`TrustAnchor`] and will not run without one — declining to check
+//! means writing [`TrustAnchor::unchecked`] where a reviewer can see it.
 //!
 //! **Attenuation is proved, not promised.** Each link must restate every
 //! dimension its parent constrained, at least as tightly. A verifier computes
@@ -42,7 +49,9 @@
 //!
 //! **Revoking a link revokes its subtree.** Every link commits to its parent's
 //! id, so a revoked link invalidates every chain that passes through it. A
-//! revocation list holds ids, not closures over descendants.
+//! revocation list holds ids, not closures over descendants. A revocation
+//! counts only from the link's own issuer or the chain's root authority, which
+//! [`MandateChain::verify`] can decide because it holds the chain.
 //!
 //! # Wire format
 //!
@@ -56,7 +65,9 @@
 //! # Example
 //!
 //! ```
-//! use buzz_mandate::{Caveats, MandateChain, Request, RevocationSet, VerifyContext};
+//! use buzz_mandate::{
+//!     Caveats, MandateChain, Request, RevocationSet, TrustAnchor, VerifyContext,
+//! };
 //! use nostr::Keys;
 //!
 //! let owner = Keys::generate();
@@ -84,24 +95,36 @@
 //!     .build()?;
 //! let chain = chain.delegate(&planner, &worker.public_key(), narrow)?;
 //!
-//! let mandate = chain.verify(&RevocationSet::new())?;
+//! // Verification is relative to a root the verifier already trusts.
+//! let anchor = TrustAnchor::root(&owner.public_key());
+//! let mandate = chain.verify(&anchor, &RevocationSet::new())?;
 //! assert_eq!(mandate.subject(), &worker.public_key());
 //!
 //! let request = Request {
 //!     kind: Some(9),
-//!     channel: Some("engineering"),
+//!     channels: &["engineering"],
 //!     ..Request::default()
 //! };
-//! let now = VerifyContext::at(1_799_999_000);
+//! let now = VerifyContext::new(1_799_999_000, 0);
 //! let actor = worker.public_key();
 //! assert!(mandate.authorizes(&actor, &request, &now).is_ok());
 //!
 //! // The channel the planner kept for itself was never delegated onward.
-//! let out_of_scope = Request { channel: Some("general"), ..request.clone() };
+//! let out_of_scope = Request { channels: &["general"], ..request.clone() };
 //! assert!(mandate.authorizes(&actor, &out_of_scope, &now).is_err());
 //!
-//! // And the mandate is bound to the worker: nobody else can present it.
+//! // Every channel an action touches must be in scope, not just one of them.
+//! let both = Request { channels: &["engineering", "general"], ..request.clone() };
+//! assert!(mandate.authorizes(&actor, &both, &now).is_err());
+//!
+//! // The mandate is bound to the worker: nobody else can present it.
 //! assert!(mandate.authorizes(&planner.public_key(), &request, &now).is_err());
+//!
+//! // And a chain from a root nobody vouched for verifies against nothing.
+//! let impostor = Keys::generate();
+//! let self_issued =
+//!     MandateChain::root(&impostor, &worker.public_key(), Caveats::default())?;
+//! assert!(self_issued.verify(&anchor, &RevocationSet::new()).is_err());
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -116,7 +139,7 @@ pub mod error;
 pub mod link;
 
 pub use caveat::{Caveats, CaveatsBuilder, Request, VerifyContext};
-pub use chain::{MandateChain, RevocationSet, VerifiedMandate};
+pub use chain::{MandateChain, RevocationSet, TrustAnchor, VerifiedMandate};
 pub use error::{CaveatError, DenyReason, InvalidLinkId, MandateError};
 pub use link::{Link, LinkId, WireLink, DOMAIN, ROOT_PARENT};
 

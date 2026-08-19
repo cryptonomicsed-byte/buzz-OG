@@ -35,6 +35,16 @@ pub const MAX_KIND: u32 = 65535;
 /// Maximum length of a `channel` or `tool` member, in bytes.
 pub const MAX_NAME_LEN: usize = 64;
 
+/// Maximum length of an encoded caveat set, in bytes.
+///
+/// Every verifier hashes and set-compares this string once per link per event,
+/// so it needs a bound that does not depend on whatever body-size limit a
+/// particular relay happens to run with.
+pub const MAX_CAVEATS_LEN: usize = 2048;
+
+/// Maximum number of members in one set-valued dimension.
+pub const MAX_SET_MEMBERS: usize = 64;
+
 /// Maximum `depth` value. Delegation depth is additionally capped by
 /// [`crate::MAX_CHAIN_LEN`]; this bound only keeps the encoding small.
 pub const MAX_DEPTH: u32 = 255;
@@ -59,13 +69,14 @@ const DIM_USES: &str = "uses";
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Request<'a> {
     /// Event kind the subject wants to publish, if the action publishes one.
+    /// An event has exactly one kind, so this stays singular.
     pub kind: Option<u32>,
-    /// Channel the action targets — the NIP-29 `h` tag value.
-    pub channel: Option<&'a str>,
-    /// Counterparty pubkey (lowercase hex) the action targets.
-    pub peer: Option<&'a str>,
-    /// Tool or method name the action invokes.
-    pub tool: Option<&'a str>,
+    /// Channels the action targets — every NIP-29 `h` tag on the event.
+    pub channels: &'a [&'a str],
+    /// Counterparty pubkeys (lowercase hex) the action targets — every `p` tag.
+    pub peers: &'a [&'a str],
+    /// Tools or methods the action invokes.
+    pub tools: &'a [&'a str],
 }
 
 /// Everything a verifier knows that is not in the mandate itself.
@@ -85,13 +96,21 @@ pub struct VerifyContext {
 }
 
 impl VerifyContext {
-    /// A context at `now` with no invocations counted yet.
+    /// A context at `now` with a known invocation count.
     #[must_use]
-    pub const fn at(now: u64) -> Self {
-        Self {
-            now,
-            uses_consumed: 0,
-        }
+    pub const fn new(now: u64, uses_consumed: u32) -> Self {
+        Self { now, uses_consumed }
+    }
+
+    /// A context at `now` for a verifier that does not track invocations.
+    ///
+    /// Named for what it gives up: a `uses` caveat cannot be enforced without
+    /// a count, so under this context it is advisory and a mandate with
+    /// `uses=1` will authorize a thousand calls. Use
+    /// [`VerifyContext::new`] wherever a budget is meant to bite.
+    #[must_use]
+    pub const fn at_untracked(now: u64) -> Self {
+        Self::new(now, 0)
     }
 }
 
@@ -195,6 +214,13 @@ impl Caveats {
     pub fn parse(s: &str) -> Result<Self, CaveatError> {
         if s.is_empty() {
             return Ok(Self::default());
+        }
+
+        if s.len() > MAX_CAVEATS_LEN {
+            return Err(CaveatError::TooLong {
+                len: s.len(),
+                max: MAX_CAVEATS_LEN,
+            });
         }
 
         if let Some(position) = s.bytes().position(|b| !(0x21..=0x7e).contains(&b)) {
@@ -417,9 +443,9 @@ impl Caveats {
             }
         }
 
-        check_membership(DIM_CHANNEL, self.channels.as_ref(), request.channel)?;
-        check_membership(DIM_PEER, self.peers.as_ref(), request.peer)?;
-        check_membership(DIM_TOOL, self.tools.as_ref(), request.tool)?;
+        check_membership(DIM_CHANNEL, self.channels.as_ref(), request.channels)?;
+        check_membership(DIM_PEER, self.peers.as_ref(), request.peers)?;
+        check_membership(DIM_TOOL, self.tools.as_ref(), request.tools)?;
 
         if let Some(budget) = self.uses {
             if context.uses_consumed >= budget {
@@ -648,6 +674,13 @@ fn parse_kind_set(value: &str) -> Result<BTreeSet<u32>, CaveatError> {
             dimension: DIM_KIND.to_owned(),
         });
     }
+    if out.len() > MAX_SET_MEMBERS {
+        return Err(CaveatError::TooManyMembers {
+            dimension: DIM_KIND.to_owned(),
+            count: out.len(),
+            max: MAX_SET_MEMBERS,
+        });
+    }
     Ok(out)
 }
 
@@ -680,6 +713,13 @@ fn parse_string_set(
     if out.is_empty() {
         return Err(CaveatError::EmptySet {
             dimension: dimension.to_owned(),
+        });
+    }
+    if out.len() > MAX_SET_MEMBERS {
+        return Err(CaveatError::TooManyMembers {
+            dimension: dimension.to_owned(),
+            count: out.len(),
+            max: MAX_SET_MEMBERS,
         });
     }
     Ok(out)
@@ -785,23 +825,36 @@ fn narrows_bound(
     }
 }
 
+/// Check every value a request states on one dimension.
+///
+/// A Nostr event carries as many `h` and `p` tags as its author chose, and an
+/// action that touches two channels touches both of them. So *every* stated
+/// value must be permitted, not merely the first: a verifier that checked one
+/// and stopped would authorize an event tagged `h=engineering` and `h=secrets`
+/// under a mandate scoped to `engineering` alone.
+///
+/// Stating nothing on a constrained dimension is still a denial, for the same
+/// fail-closed reason silence has always been one here.
 fn check_membership(
     dimension: &'static str,
     permitted: Option<&BTreeSet<String>>,
-    value: Option<&str>,
+    values: &[&str],
 ) -> Result<(), DenyReason> {
     let Some(permitted) = permitted else {
         return Ok(());
     };
 
-    let value = value.ok_or(DenyReason::UnstatedDimension { dimension })?;
-
-    if permitted.contains(value) {
-        Ok(())
-    } else {
-        Err(DenyReason::OutOfScope {
-            dimension,
-            value: value.to_owned(),
-        })
+    if values.is_empty() {
+        return Err(DenyReason::UnstatedDimension { dimension });
     }
+
+    for value in values {
+        if !permitted.contains(*value) {
+            return Err(DenyReason::OutOfScope {
+                dimension,
+                value: (*value).to_owned(),
+            });
+        }
+    }
+    Ok(())
 }

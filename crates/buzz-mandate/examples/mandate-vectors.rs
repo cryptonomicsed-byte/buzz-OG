@@ -13,7 +13,7 @@
 //! Keys are derived from the secrets `0x01..0x04` so vectors are reproducible;
 //! they are test keys and must never be used for anything else.
 
-use buzz_mandate::{Caveats, MandateChain};
+use buzz_mandate::{Caveats, MandateChain, RevocationSet, TrustAnchor};
 use nostr::Keys;
 use serde_json::{json, Value};
 
@@ -30,7 +30,7 @@ fn caveats(s: &str) -> Caveats {
 
 fn chain_vector(name: &str, description: &str, chain: &MandateChain) -> Value {
     let mandate = chain
-        .verify(&buzz_mandate::RevocationSet::new())
+        .verify(&TrustAnchor::unchecked(), &RevocationSet::new())
         .expect("vector chains must verify");
 
     json!({
@@ -99,6 +99,9 @@ fn main() {
         "invalid_caveats": invalid_cases(),
         "narrowing": narrowing_cases(),
         "authorization": authorization_cases(),
+        "invalid_chains": invalid_chain_cases(&two_hop, &one_hop, &planner),
+        "actor_binding": actor_binding_cases(&two_hop, &planner, &worker, &helper),
+        "trust_anchor": trust_anchor_cases(&one_hop, &owner, &helper),
     });
 
     println!(
@@ -174,11 +177,14 @@ fn narrowing_cases() -> Value {
 fn authorization_cases() -> Value {
     json!([
         { "caveats": "channel=engineering&kind=9", "now": 1000, "uses_consumed": 0,
-          "request": { "kind": 9, "channel": "engineering" }, "allowed": true },
+          "request": { "kind": 9, "channels": ["engineering"] }, "allowed": true },
         { "caveats": "channel=general&kind=9", "now": 1000, "uses_consumed": 0,
-          "request": { "kind": 9, "channel": "engineering" }, "allowed": false, "reason": "out_of_scope" },
+          "request": { "kind": 9, "channels": ["engineering"] }, "allowed": false, "reason": "out_of_scope" },
         { "caveats": "tool=shell", "now": 1000, "uses_consumed": 0,
           "request": { "kind": 9 }, "allowed": false, "reason": "unstated_dimension" },
+        { "caveats": "channel=engineering", "now": 1000, "uses_consumed": 0,
+          "request": { "channels": ["engineering", "secrets"] }, "allowed": false, "reason": "out_of_scope",
+          "why": "every channel an action targets must be permitted, not just the first" },
         { "caveats": "expires=2000&not_before=1000", "now": 999, "uses_consumed": 0,
           "request": {}, "allowed": false, "reason": "not_yet_valid" },
         { "caveats": "expires=2000&not_before=1000", "now": 1000, "uses_consumed": 0,
@@ -191,5 +197,186 @@ fn authorization_cases() -> Value {
         { "caveats": "uses=3", "now": 1000, "uses_consumed": 3, "request": {}, "allowed": false, "reason": "budget_exhausted" },
         { "caveats": "", "now": 0, "uses_consumed": 0, "request": {}, "allowed": true,
           "why": "the unconstrained set permits everything" }
+    ])
+}
+
+/// Chains a verifier MUST reject, as ready-to-parse envelopes.
+///
+/// The spec lists these in prose; a second implementation that ran only the
+/// caveat vectors could accept every one of them and still look green.
+fn invalid_chain_cases(two_hop: &MandateChain, one_hop: &MandateChain, planner: &Keys) -> Value {
+    let envelope = |chain: &MandateChain| -> Value {
+        serde_json::from_str(&chain.to_json().expect("serialise")).expect("json")
+    };
+    let mut cases = Vec::new();
+
+    // Caveats edited after signing: the link id changes, the signature does not.
+    let mut widened = envelope(two_hop);
+    widened["links"][1]["caveats"] =
+        json!("channel=engineering,general&depth=1&expires=1799990000&kind=9,40002&uses=5");
+    cases.push(json!({
+        "name": "widened_after_signing",
+        "envelope": widened,
+        "reason": "leaf caveats were edited, so the signature no longer matches the link id",
+    }));
+
+    // A link from a different chain, pasted in.
+    let other_root = MandateChain::root(
+        planner,
+        &keys(9).public_key(),
+        caveats("channel=engineering&depth=1&expires=1799990000&kind=9&uses=5"),
+    )
+    .expect("other root");
+    let mut spliced = envelope(two_hop);
+    spliced["links"][1] = envelope(&other_root)["links"][0].clone();
+    cases.push(json!({
+        "name": "spliced_link",
+        "envelope": spliced,
+        "reason": "link 1 belongs to another chain: its parent is not link 0's id",
+    }));
+
+    // A root link that claims a parent.
+    let mut rooted_parent = envelope(two_hop);
+    rooted_parent["links"][0]["parent"] = rooted_parent["links"][1]["parent"].clone();
+    cases.push(json!({
+        "name": "root_with_parent",
+        "envelope": rooted_parent,
+        "reason": "the root link must have parent: null",
+    }));
+
+    // Duplicated leaf: five links, and a repeated subject.
+    let mut too_long = envelope(two_hop);
+    let leaf = too_long["links"][1].clone();
+    if let Some(links) = too_long["links"].as_array_mut() {
+        for _ in 0..3 {
+            links.push(leaf.clone());
+        }
+    }
+    cases.push(json!({
+        "name": "over_max_chain_len",
+        "envelope": too_long,
+        "reason": "five links exceeds the four-link maximum",
+    }));
+
+    // Unknown-field padding: changes the bytes, not the chain.
+    let mut padded = envelope(one_hop);
+    padded["pad"] = json!("x");
+    cases.push(json!({
+        "name": "unknown_envelope_field",
+        "envelope": padded,
+        "reason": "unknown fields are refused so one chain cannot have two encodings",
+    }));
+
+    let mut padded_link = envelope(one_hop);
+    padded_link["links"][0]["pad"] = json!("x");
+    cases.push(json!({
+        "name": "unknown_link_field",
+        "envelope": padded_link,
+        "reason": "unknown link fields are refused for the same reason",
+    }));
+
+    let mut bad_version = envelope(one_hop);
+    bad_version["v"] = json!(2);
+    cases.push(json!({
+        "name": "unsupported_version",
+        "envelope": bad_version,
+        "reason": "envelope version must be 1",
+    }));
+
+    Value::Array(cases)
+}
+
+/// Authorization cases that state an actor — the rule that defeats truncation.
+fn actor_binding_cases(
+    two_hop: &MandateChain,
+    planner: &Keys,
+    worker: &Keys,
+    helper: &Keys,
+) -> Value {
+    let full: Value = serde_json::from_str(&two_hop.to_json().expect("serialise")).expect("json");
+    let mut truncated = full.clone();
+    if let Some(links) = truncated["links"].as_array_mut() {
+        links.truncate(1);
+    }
+
+    json!([
+        {
+            "name": "subject_in_scope",
+            "envelope": full.clone(),
+            "actor": worker.public_key().to_hex(),
+            "now": 1_799_000_000u64,
+            "request": { "kind": 9, "channels": ["engineering"] },
+            "allowed": true,
+        },
+        {
+            "name": "truncated_prefix_names_another_subject",
+            "envelope": truncated.clone(),
+            "actor": worker.public_key().to_hex(),
+            "now": 1_799_000_000u64,
+            "request": { "kind": 9, "channels": ["general"] },
+            "allowed": false,
+            "reason": "wrong_subject",
+            "why": "the prefix grants #general, but to the planner — not to the worker",
+        },
+        {
+            "name": "truncated_prefix_is_valid_for_its_own_subject",
+            "envelope": truncated,
+            "actor": planner.public_key().to_hex(),
+            "now": 1_799_000_000u64,
+            "request": { "kind": 9, "channels": ["general"] },
+            "allowed": true,
+        },
+        {
+            "name": "a_third_party_holds_nothing",
+            "envelope": full.clone(),
+            "actor": helper.public_key().to_hex(),
+            "now": 1_799_000_000u64,
+            "request": { "kind": 9, "channels": ["engineering"] },
+            "allowed": false,
+            "reason": "wrong_subject",
+        },
+        {
+            "name": "every_targeted_channel_must_be_in_scope",
+            "envelope": full,
+            "actor": worker.public_key().to_hex(),
+            "now": 1_799_000_000u64,
+            "request": { "kind": 9, "channels": ["engineering", "secrets"] },
+            "allowed": false,
+            "reason": "out_of_scope",
+            "why": "an event may carry many h tags; checking only the first authorizes the rest",
+        }
+    ])
+}
+
+/// A chain is only worth what its root is worth.
+fn trust_anchor_cases(one_hop: &MandateChain, owner: &Keys, impostor: &Keys) -> Value {
+    let self_issued =
+        MandateChain::root(impostor, &keys(3).public_key(), Caveats::default()).expect("root");
+    let self_issued_json: Value =
+        serde_json::from_str(&self_issued.to_json().expect("serialise")).expect("json");
+
+    json!([
+        {
+            "name": "trusted_root",
+            "envelope": serde_json::from_str::<Value>(&one_hop.to_json().expect("serialise"))
+                .expect("json"),
+            "trusted_roots": [owner.public_key().to_hex()],
+            "valid": true,
+        },
+        {
+            "name": "self_issued_unconstrained_chain",
+            "envelope": self_issued_json.clone(),
+            "trusted_roots": [owner.public_key().to_hex()],
+            "valid": false,
+            "reason": "untrusted_root",
+            "why": "internally flawless and grants everything; only the anchor stops it",
+        },
+        {
+            "name": "self_issued_chain_is_internally_consistent",
+            "envelope": self_issued_json,
+            "trusted_roots": Value::Null,
+            "valid": true,
+            "why": "with no anchor, structure alone is all that is checked — which is the trap",
+        }
     ])
 }

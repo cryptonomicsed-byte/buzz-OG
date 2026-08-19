@@ -239,6 +239,95 @@ enum Cmd {
     /// Community moderation — reports queue, bans, timeouts, audit trail
     #[command(subcommand)]
     Moderation(ModerationCmd),
+    /// NIP-CM capability mandates — issue, narrow, verify, and revoke agent authority
+    #[command(subcommand)]
+    Mandate(MandateCmd),
+}
+
+/// `buzz mandate` — bounded, attenuating delegation of agent authority.
+///
+/// A caveat string constrains any of eight dimensions and must be in canonical
+/// form, e.g. `channel=engineering&depth=1&expires=1800000000&kind=9&uses=5`.
+/// See `docs/nips/NIP-CM.md`.
+#[derive(Subcommand)]
+pub enum MandateCmd {
+    /// Issue a root mandate granting another key a bounded capability
+    Issue {
+        /// Subject pubkey (64 lowercase hex) receiving the capability
+        #[arg(long)]
+        subject: String,
+        /// Canonical caveat string; empty means unconstrained
+        #[arg(long, default_value = "")]
+        caveats: String,
+    },
+    /// Narrow a mandate you hold and pass it to another key
+    Delegate {
+        /// Chain JSON, or `@path` to read it from a file
+        #[arg(long)]
+        chain: String,
+        /// Subject pubkey (64 lowercase hex) receiving the narrowed capability
+        #[arg(long)]
+        subject: String,
+        /// Canonical caveat string; must narrow the current leaf's caveats
+        #[arg(long, default_value = "")]
+        caveats: String,
+    },
+    /// Verify a chain, and optionally decide one concrete request against it.
+    ///
+    /// Exits 0 only when the chain verifies and, when `--actor` is given, the
+    /// request is authorized. The verdict JSON is printed either way.
+    Verify {
+        /// Chain JSON, or `@path` to read it from a file
+        #[arg(long)]
+        chain: String,
+        /// Root pubkey this verifier derives authority from; repeat for more.
+        ///
+        /// Without it the chain is checked for internal consistency only, which
+        /// any self-issued chain also passes. Required for a real decision.
+        #[arg(long = "trusted-root")]
+        trusted_root: Vec<String>,
+        /// Pubkey attempting the action. Without it, no request is evaluated —
+        /// a chain on its own authorizes nobody.
+        #[arg(long)]
+        actor: Option<String>,
+        /// Unix timestamp to evaluate against (default: now).
+        /// Always the verifier's clock, never the subject's.
+        #[arg(long)]
+        now: Option<u64>,
+        /// Event kind the action would publish
+        #[arg(long)]
+        kind: Option<u32>,
+        /// Channel the action targets; repeat for every `h` tag on the event.
+        /// Every one stated must be in scope, not merely the first.
+        #[arg(long)]
+        channel: Vec<String>,
+        /// Counterparty pubkey the action targets; repeat for every `p` tag
+        #[arg(long)]
+        peer: Vec<String>,
+        /// Tool or method the action invokes; repeat for more than one
+        #[arg(long)]
+        tool: Vec<String>,
+        /// Invocations already spent against this mandate
+        #[arg(long, default_value_t = 0)]
+        uses_consumed: u32,
+        /// Revocation as `<link-id>:<revoker-pubkey>`; repeat for more.
+        /// The revoker matters: only the link's issuer or the chain's root
+        /// authority can revoke it.
+        #[arg(long = "revoked")]
+        revoked: Vec<String>,
+    },
+    /// Publish a chain to the relay as a kind:50001 event
+    Publish {
+        /// Chain JSON, or `@path` to read it from a file
+        #[arg(long)]
+        chain: String,
+    },
+    /// Revoke a link id, invalidating every chain through it (kind:50002)
+    Revoke {
+        /// Link id to revoke (64 lowercase hex)
+        #[arg(long)]
+        link: String,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -1992,6 +2081,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
+        Cmd::Mandate(sub) => commands::mandate::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
     }
 }
@@ -2086,6 +2176,7 @@ mod tests {
             "emoji",
             "feed",
             "issues",
+            "mandate",
             "media",
             "mem",
             "messages",

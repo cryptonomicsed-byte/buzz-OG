@@ -1,6 +1,6 @@
 //! Chain assembly and verification.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use nostr::{Keys, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -10,14 +10,79 @@ use crate::error::{DenyReason, MandateError};
 use crate::link::{Link, LinkId, WireLink};
 use crate::MAX_CHAIN_LEN;
 
-/// Link ids that a verifier considers revoked.
+/// The set of root keys a verifier is willing to derive authority from.
 ///
-/// Because every link commits to its parent's id, revoking a link
-/// automatically invalidates every chain that passes through it — a verifier
-/// never has to enumerate the descendants of a revoked grant.
+/// A chain proves that authority flowed correctly *from its own root*. It says
+/// nothing about whether that root was ever entitled to grant anything —
+/// anyone can generate a keypair and self-issue an unconstrained mandate to
+/// themselves. Checking the root is therefore not optional, and this type
+/// exists so that a caller cannot silently forget it: it is a required
+/// argument to [`MandateChain::verify`], and skipping the check requires
+/// naming [`TrustAnchor::unchecked`] out loud.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrustAnchor {
+    /// `None` means every root is admitted.
+    roots: Option<BTreeSet<String>>,
+}
+
+impl TrustAnchor {
+    /// Trust exactly one root key.
+    #[must_use]
+    pub fn root(key: &PublicKey) -> Self {
+        Self {
+            roots: Some([key.to_hex()].into_iter().collect()),
+        }
+    }
+
+    /// Trust any of several root keys.
+    #[must_use]
+    pub fn any_of<'a, I: IntoIterator<Item = &'a PublicKey>>(keys: I) -> Self {
+        Self {
+            roots: Some(keys.into_iter().map(PublicKey::to_hex).collect()),
+        }
+    }
+
+    /// Admit every root, checking only the chain's internal consistency.
+    ///
+    /// This is the right choice in exactly two situations: relaying or storing
+    /// a chain without acting on it, and displaying one to a human who will
+    /// judge the root themselves. It is the wrong choice anywhere a mandate
+    /// decides whether an action may happen — a self-issued chain from a key
+    /// invented five seconds ago passes every other rule in this module.
+    #[must_use]
+    pub fn unchecked() -> Self {
+        Self { roots: None }
+    }
+
+    /// Whether this anchor admits `root` as a source of authority.
+    #[must_use]
+    pub fn admits(&self, root: &PublicKey) -> bool {
+        self.roots
+            .as_ref()
+            .is_none_or(|roots| roots.contains(&root.to_hex()))
+    }
+
+    /// Whether this anchor admits every root.
+    #[must_use]
+    pub fn is_unchecked(&self) -> bool {
+        self.roots.is_none()
+    }
+}
+
+/// Revocations a verifier knows about: which link, and who revoked it.
+///
+/// The revoker is recorded because a revocation is only honoured from the
+/// link's own issuer or the chain's root authority. That check needs the chain,
+/// which is exactly what [`MandateChain::verify`] has in hand — so revocation
+/// authority is decided there rather than being assumed at collection time,
+/// where a kind:50002 event naming an opaque hash cannot be judged at all.
+///
+/// Because every link commits to its parent's id, revoking a link invalidates
+/// every chain that passes through it: a verifier never has to enumerate the
+/// descendants of a revoked grant.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RevocationSet {
-    ids: BTreeSet<LinkId>,
+    revokers: BTreeMap<LinkId, BTreeSet<String>>,
 }
 
 impl RevocationSet {
@@ -27,35 +92,47 @@ impl RevocationSet {
         Self::default()
     }
 
-    /// Mark a link id revoked. Returns `true` if it was not already present.
-    pub fn insert(&mut self, id: LinkId) -> bool {
-        self.ids.insert(id)
+    /// Record that `revoker` revoked `id`.
+    ///
+    /// Whether that revocation is *honoured* depends on the chain it is checked
+    /// against; see [`MandateChain::verify`].
+    pub fn insert(&mut self, id: LinkId, revoker: &PublicKey) -> bool {
+        self.revokers
+            .entry(id)
+            .or_default()
+            .insert(revoker.to_hex())
     }
 
-    /// Whether a link id is revoked.
+    /// Whether `id` was revoked by any of `authorized`.
     #[must_use]
-    pub fn contains(&self, id: &LinkId) -> bool {
-        self.ids.contains(id)
+    pub fn is_revoked_by_any(&self, id: &LinkId, authorized: &[&PublicKey]) -> bool {
+        self.revokers.get(id).is_some_and(|revokers| {
+            authorized
+                .iter()
+                .any(|key| revokers.contains(&key.to_hex()))
+        })
     }
 
-    /// Number of revoked ids.
+    /// Number of distinct revoked link ids.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.ids.len()
+        self.revokers.len()
     }
 
     /// Whether the set is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.ids.is_empty()
+        self.revokers.is_empty()
     }
 }
 
-impl FromIterator<LinkId> for RevocationSet {
-    fn from_iter<I: IntoIterator<Item = LinkId>>(iter: I) -> Self {
-        Self {
-            ids: iter.into_iter().collect(),
+impl FromIterator<(LinkId, PublicKey)> for RevocationSet {
+    fn from_iter<I: IntoIterator<Item = (LinkId, PublicKey)>>(iter: I) -> Self {
+        let mut out = Self::new();
+        for (id, revoker) in iter {
+            out.insert(id, &revoker);
         }
+        out
     }
 }
 
@@ -154,10 +231,19 @@ impl MandateChain {
     ///
     /// Returns the first [`MandateError`] encountered, tagged with the index of
     /// the offending link.
-    pub fn verify(&self, revoked: &RevocationSet) -> Result<VerifiedMandate<'_>, MandateError> {
+    pub fn verify(
+        &self,
+        anchor: &TrustAnchor,
+        revoked: &RevocationSet,
+    ) -> Result<VerifiedMandate<'_>, MandateError> {
         let (Some(root), Some(leaf)) = (self.links.first(), self.links.last()) else {
             return Err(MandateError::EmptyChain);
         };
+        if !anchor.admits(root.issuer()) {
+            return Err(MandateError::UntrustedRoot {
+                root: root.issuer().to_hex(),
+            });
+        }
         if self.links.len() > MAX_CHAIN_LEN {
             return Err(MandateError::ChainTooLong {
                 len: self.links.len(),
@@ -198,7 +284,11 @@ impl MandateChain {
 
             link.verify_signature(index)?;
 
-            if revoked.contains(&link.id()) {
+            // A revocation counts only from the link's own issuer or from the
+            // root authority. Anyone else naming the id is noise, and honouring
+            // it would let a stranger disable a mandate they were never party
+            // to.
+            if revoked.is_revoked_by_any(&link.id(), &[link.issuer(), root.issuer()]) {
                 return Err(MandateError::Revoked { index });
             }
 
@@ -349,7 +439,10 @@ impl<'a> VerifiedMandate<'a> {
     }
 }
 
+// Unknown fields are refused rather than ignored: a tolerated field is a place
+// to hide bytes that change the event id while leaving the chain identical.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct WireEnvelope {
     v: u32,
     links: Vec<WireLink>,
