@@ -37,7 +37,7 @@ pub mod schema;
 
 pub use action_sink::{ActionSink, ActionSinkError};
 pub use error::{PartialProgress, WorkflowError};
-pub use executor::ExecutionResult;
+pub use executor::{ExecutionResult, PendingApproval};
 pub use schema::{ActionDef, Step, TriggerDef, WorkflowDef};
 
 use std::collections::HashMap;
@@ -226,29 +226,61 @@ impl WorkflowEngine {
                 let trace_json = serde_json::Value::Array(full_trace);
                 let step_count = result.step_index as i32;
 
-                if result.approval_token.is_some() {
-                    // Approval gates are not yet implemented (WF-08).
-                    // Fail explicitly rather than creating unreachable WaitingApproval rows.
-                    tracing::warn!(
+                if let Some(pa) = result.pending_approval {
+                    // WF-08: persist approval record and park the run.
+                    tracing::info!(
                         run_id = %run_id,
-                        step_index = result.step_index,
-                        "Workflow hit approval gate — not yet implemented, marking as failed"
+                        step_id = %pa.step_id,
+                        "Workflow suspended at approval gate — persisting WaitingApproval"
                     );
+
+                    // First transition the run to WaitingApproval so the grant/deny
+                    // handlers can guard on the expected status.
                     if let Err(e) = self
                         .db
                         .update_workflow_run(
                             community_id,
                             run_id,
-                            RunStatus::Failed,
+                            RunStatus::WaitingApproval,
                             step_count,
                             &trace_json,
-                            Some("approval gates not yet implemented — see WF-08"),
+                            None,
                         )
                         .await
                     {
                         tracing::error!(
                             run_id = %run_id,
-                            "Failed to update run to Failed (approval gate): {e}"
+                            "Failed to set run to WaitingApproval: {e}"
+                        );
+                        return;
+                    }
+
+                    // Fetch workflow_id from the run record (needed for the approval FK).
+                    let workflow_id = match self.db.get_workflow_run(community_id, run_id).await {
+                        Ok(r) => r.workflow_id,
+                        Err(e) => {
+                            tracing::error!(
+                                run_id = %run_id,
+                                "Failed to fetch run for approval workflow_id: {e}"
+                            );
+                            return;
+                        }
+                    };
+
+                    let params = buzz_db::workflow::CreateApprovalParams {
+                        community_id,
+                        token: &pa.token,
+                        workflow_id,
+                        run_id,
+                        step_id: &pa.step_id,
+                        step_index: pa.step_index as i32,
+                        approver_spec: &pa.approver_spec,
+                        expires_at: pa.expires_at,
+                    };
+                    if let Err(e) = self.db.create_approval(params).await {
+                        tracing::error!(
+                            run_id = %run_id,
+                            "Failed to create approval record: {e}"
                         );
                     }
                 } else {

@@ -458,8 +458,12 @@ pub enum StepResult {
     Completed(JsonValue),
     /// Step requests suspension (approval gate). Execution must pause.
     Suspended {
-        /// Token used to resume or reject this approval gate.
+        /// Raw plaintext token used to resume or reject this approval gate.
         approval_token: String,
+        /// Who may approve (`from` field verbatim).
+        approver_spec: String,
+        /// When the approval request expires.
+        expires_at: chrono::DateTime<chrono::Utc>,
     },
     /// Step was skipped due to `if:` condition being false.
     Skipped,
@@ -659,12 +663,15 @@ pub async fn dispatch_action(
             );
 
             let token = generate_approval_token(run_id, step_id);
-
-            // TODO (WF-08): create approval record in DB, emit kind:46010.
-            // For now, return Suspended with the token so the caller can persist state.
+            let timeout_secs = parse_duration_secs(timeout_str)
+                .unwrap_or(86400);
+            let expires_at = chrono::Utc::now()
+                + chrono::Duration::seconds(timeout_secs as i64);
 
             Ok(StepResult::Suspended {
                 approval_token: token,
+                approver_spec: from.clone(),
+                expires_at,
             })
         }
 
@@ -932,6 +939,22 @@ async fn add_reaction_impl(message_id: &str, emoji: &str) -> Result<JsonValue, W
     }))
 }
 
+/// Approval metadata emitted when execution suspends at a `RequestApproval` step.
+/// The caller must persist this to `workflow_approvals` and set the run to `WaitingApproval`.
+#[derive(Debug)]
+pub struct PendingApproval {
+    /// Raw (plaintext) approval token — hashed before DB storage.
+    pub token: String,
+    /// The step id that issued the request.
+    pub step_id: String,
+    /// Zero-based index of the suspending step.
+    pub step_index: usize,
+    /// Approver spec (`from` field, e.g. `"@manager"` or a 64-char pubkey hex).
+    pub approver_spec: String,
+    /// When this approval request should expire.
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// Rich return type from `execute_run` / `execute_from_step`.
 ///
 /// Carries enough information for the caller to:
@@ -942,7 +965,7 @@ async fn add_reaction_impl(message_id: &str, emoji: &str) -> Result<JsonValue, W
 pub struct ExecutionResult {
     /// Set when execution suspended at a `RequestApproval` step.
     /// `None` means the run completed normally.
-    pub approval_token: Option<String>,
+    pub pending_approval: Option<PendingApproval>,
     /// Index of the step that suspended (or the total step count on completion).
     pub step_index: usize,
     /// Accumulated step outputs at the point of suspension or completion.
@@ -959,10 +982,10 @@ pub struct ExecutionResult {
 /// 3. Dispatches the action.
 /// 4. Stores the step output for use by later steps.
 ///
-/// On `RequestApproval`: returns `ExecutionResult` with `approval_token = Some(token)`.
-/// Caller must persist the approval record and update the run status.
+/// On `RequestApproval`: returns `ExecutionResult` with `pending_approval = Some(...)`.
+/// Caller must persist the approval record and set run status to `WaitingApproval`.
 ///
-/// Returns `ExecutionResult` with `approval_token = None` on normal completion.
+/// Returns `ExecutionResult` with `pending_approval = None` on normal completion.
 ///
 /// Enforces `engine.config.max_concurrent` via a semaphore — returns
 /// [`WorkflowError::CapacityExceeded`] immediately if all permits are taken.
@@ -1183,15 +1206,19 @@ async fn execute_steps(
                 }));
                 step_outputs.insert(step.id.clone(), output);
             }
-            StepResult::Suspended { approval_token } => {
+            StepResult::Suspended { approval_token, approver_spec, expires_at } => {
                 info!(
                     run_id = %run_id, step = %step.id,
                     "Step suspended — awaiting approval (token: <redacted>)"
                 );
-                // Return the token and current state so the caller can persist the
-                // approval record and update the run's execution trace.
                 return Ok(ExecutionResult {
-                    approval_token: Some(approval_token),
+                    pending_approval: Some(PendingApproval {
+                        token: approval_token,
+                        step_id: step.id.clone(),
+                        step_index: i,
+                        approver_spec,
+                        expires_at,
+                    }),
                     step_index: i,
                     step_outputs,
                     trace,
@@ -1209,7 +1236,7 @@ async fn execute_steps(
 
     info!(run_id = %run_id, "Workflow run completed");
     Ok(ExecutionResult {
-        approval_token: None,
+        pending_approval: None,
         step_index: def.steps.len(),
         step_outputs,
         trace,
